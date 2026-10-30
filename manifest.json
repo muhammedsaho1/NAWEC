@@ -1,0 +1,22 @@
+{
+  "name": "NAWEC Alerts",
+  "short_name": "NAWEC Alerts",
+  "description": "Power outage alerts for your area",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F6FB",
+  "theme_color": "#1236C8",
+  "icons": [
+    {
+      "src": "/nawec-icon.png",
+      "sizes": "216x216",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

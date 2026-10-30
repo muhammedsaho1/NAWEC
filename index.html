@@ -1,0 +1,1391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NAWEC Alerts — Know before the power goes off</title>
+<meta name="description" content="Live power outage alerts by email and SMS for your area. Hospitals and clinics are warned first.">
+<meta name="theme-color" content="#0070A8">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/nawec-icon.png" type="image/png">
+<link rel="apple-touch-icon" href="/nawec-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+/* NAWEC Alerts design system: NAWEC colours, flat white surfaces, calm and clear */
+:root{
+  /* NAWEC identity: logo red #EF1C23, green #008351, blue #008BC6 */
+  --ink:#0E1B2B; --ink-2:#465467; --muted:#6C7889; --paper:#F5F7F9; --bg:#F5F7F9; --card:#FFFFFF; --line:#DFE4EA; --soft:#EEF2F5;
+  --river:#0070A8; --river-deep:#004E7A; --river-soft:#E2F2FA; --blue:#0070A8; --blue-d:#004E7A; --sky:#E2F2FA;
+  --bank:#008351; --bank-soft:#DFF3EA; --green:#008351; --green-d:#006B42; --green-soft:#DFF3EA;
+  --flag:#E31B23; --flag-soft:#FDE8E9; --red:#E31B23; --red-d:#C0141B; --red-soft:#FDE8E9;
+  --sun:#9A5B00; --sun-soft:#FFF1D6; --orange:#9A5B00; --orange-soft:#FFF1D6; --volt-soft:#FFF1D6;
+  --navy:#0B2236;
+  --r:16px; --r-s:10px;
+  --display:"Sora",ui-sans-serif,system-ui,sans-serif;
+  --body:"DM Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:var(--body);background:var(--paper);color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom)}
+a{color:var(--river)}
+button,input,select,textarea{font:inherit;color:inherit}
+svg.i{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.hidden{display:none!important}
+h1,h2,h3,h4{font-family:var(--display);letter-spacing:-.02em;margin:0;font-weight:700}
+.blobs{display:none}
+
+/* Top bar */
+.top{position:sticky;top:0;z-index:30;background:#fff;border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:14px;height:64px}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink);cursor:pointer}
+.brand .logo{height:38px;width:auto;display:block}
+.brand #brandTxt{font-family:var(--display);font-weight:700;font-size:17px;line-height:1.1;padding-left:12px;border-left:1px solid var(--line)}
+.brand small{display:block;font-family:var(--body);font-size:11.5px;font-weight:600;color:var(--muted)}
+.top nav{margin-left:auto;display:flex;gap:4px;align-items:center}
+.navlink{background:none;border:0;padding:8px 12px;border-radius:var(--r-s);cursor:pointer;color:var(--ink-2);font-weight:600;display:flex;gap:8px;align-items:center}
+.navlink:hover{background:var(--soft);color:var(--ink)}
+.navlink.on{color:var(--river);background:var(--river-soft)}
+
+/* Buttons & inputs */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:999px;padding:12px 20px;font-weight:700;cursor:pointer;background:var(--river);color:#fff;text-decoration:none;transition:background .15s,transform .05s;white-space:nowrap}
+.btn:hover{background:var(--river-deep)}
+.btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.volt{background:var(--ink);color:#fff} .btn.volt:hover{background:#000}
+.btn.white{background:#fff;color:var(--ink);border:1px solid var(--line)} .btn.white:hover{background:var(--soft)}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)} .btn.ghost:hover{background:var(--soft)}
+.btn.red{background:var(--flag)} .btn.red:hover{background:var(--red-d)}
+.btn.green{background:var(--bank)} .btn.green:hover{background:#106530}
+.btn.sm{padding:8px 14px;font-size:13.5px}
+.btn.block{width:100%}
+label.f{display:block;margin-bottom:16px}
+label.f>span{display:block;font-weight:600;font-size:13.5px;margin-bottom:6px;color:var(--ink)}
+label.f small{color:var(--muted);font-weight:500}
+.inp{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-s);background:#fff;outline:none;transition:border .15s,box-shadow .15s}
+.inp:focus{border-color:var(--river);box-shadow:0 0 0 3px var(--river-soft)}
+textarea.inp{min-height:100px;resize:vertical}
+select.inp{appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234A5873' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 14px center;padding-right:36px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1 1 200px}
+.check{display:flex;gap:10px;align-items:center;cursor:pointer;font-size:14px;font-weight:500;padding:4px 0}
+.check input{width:18px;height:18px;accent-color:var(--river);margin:0}
+.err{background:var(--flag-soft);color:var(--red-d);border-radius:var(--r-s);padding:11px 13px;font-weight:600;font-size:14px;margin-bottom:16px}
+.ok{background:var(--bank-soft);color:var(--bank);border-radius:var(--r-s);padding:11px 13px;font-weight:600;font-size:14px;margin-bottom:16px}
+.muted{color:var(--muted)}
+.card{background:var(--card);border-radius:var(--r);border:1px solid var(--line)}
+.pad{padding:22px}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--ink-2);white-space:nowrap}
+.chip svg.i{width:14px;height:14px}
+.chip.red{background:var(--flag-soft);color:var(--red-d)}
+.chip.blue{background:var(--river-soft);color:var(--river-deep)}
+.chip.green{background:var(--bank-soft);color:var(--bank)}
+.chip.orange,.chip.volt{background:var(--sun-soft);color:var(--sun)}
+.chip.grey{background:var(--soft);color:var(--muted)}
+.chip.mine{background:var(--ink);color:#fff}
+.live{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;animation:blink 1.4s ease-in-out infinite}
+@keyframes blink{50%{opacity:.3}}
+.rise{animation:rise .35s ease-out both}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* HERO — light, with the logo's arcs */
+.hero{position:relative;overflow:hidden;background:#fff;border-bottom:1px solid var(--line);padding:50px 0 72px}
+.hero::before,.hero::after{content:"";position:absolute;left:-10%;right:-10%;height:520px;border-radius:50%;pointer-events:none}
+.hero::before{top:-470px;border-bottom:6px solid var(--bank);opacity:.9}
+.hero::after{bottom:-500px;border-top:6px solid #008BC6;opacity:.9}
+.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:1.1fr .9fr;gap:44px;align-items:center}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 6px;font-weight:600;font-size:13px;color:var(--ink-2)}
+.eyebrow b{background:var(--flag);color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;letter-spacing:.04em}
+.hero h1{font-size:clamp(36px,5.6vw,58px);line-height:1.04;font-weight:800;margin:18px 0 0;letter-spacing:-.035em}
+.hero h1 .g{color:var(--flag)}
+.hero p.lead{font-size:17.5px;color:var(--ink-2);max-width:500px;margin:16px 0 26px}
+.hero .ctas{display:flex;gap:10px;flex-wrap:wrap}
+.trust{display:flex;gap:8px;margin-top:22px;flex-wrap:wrap}
+.trust div{display:flex;gap:6px;align-items:center;font-weight:600;font-size:13px;color:var(--ink-2);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+.trust span{display:grid;place-items:center;background:none!important;width:auto;height:auto} .trust span svg{width:15px;height:15px}
+
+/* Power card — the one strong colour block */
+.pcard{position:relative;overflow:hidden;border-radius:20px;padding:22px;background:linear-gradient(160deg,#0070A8 0%,#004E7A 100%);color:#fff;display:flex;flex-direction:column;gap:18px}
+.pcard::after{content:"";position:absolute;width:260px;height:260px;border-radius:50%;right:-90px;top:-110px;background:rgba(255,255,255,.07);pointer-events:none}
+.pcard>*{position:relative;z-index:1}
+.pcard .wave{display:none}
+.pc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pc-label{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.pc-area{appearance:none;border:0;background:rgba(255,255,255,.14) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 12px center;
+  color:#fff;font-family:var(--display);font-weight:700;font-size:16px;border-radius:var(--r-s);padding:8px 34px 8px 12px;margin-top:6px;cursor:pointer;max-width:240px}
+.pc-area option,.pc-area optgroup{color:var(--ink)}
+.pc-bolt{display:none}
+.pc-mid{padding-top:4px}
+.pc-mid .pc-label{display:inline-flex!important;gap:7px;align-items:center;background:var(--bank);color:#fff;border-radius:999px;padding:4px 11px;letter-spacing:.06em}
+.pcard.off .pc-mid .pc-label{background:var(--flag)}
+.pcard.soon .pc-mid .pc-label{background:#E8A317;color:#2A1A00}
+.pc-state{font-family:var(--display);font-size:clamp(36px,5vw,50px);font-weight:800;letter-spacing:-.035em;line-height:1;margin-top:12px}
+.pc-sub{font-weight:500;color:rgba(255,255,255,.82);margin-top:8px}
+.pc-count{display:flex;gap:8px;margin-top:16px}
+.pc-count div{background:rgba(255,255,255,.12);border-radius:var(--r-s);padding:8px 12px;min-width:64px;text-align:center}
+.pc-count b{display:block;font-family:var(--display);font-size:22px;line-height:1.1;font-variant-numeric:tabular-nums}
+.pc-count span{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.dtop .pcard{min-height:100%}
+
+/* Sections */
+section.s{padding:40px 0}
+.sh{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.sh h2{font-size:28px}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.pill{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px;font-weight:600;cursor:pointer;color:var(--ink-2);display:flex;gap:7px;align-items:center;white-space:nowrap;flex:none;font-size:14px}
+.pill.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.pill .n{color:var(--muted);font-size:12.5px}
+.pill.on .n{color:rgba(255,255,255,.7)}
+
+/* Outage cards */
+.ogrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.ocard{position:relative;padding:18px 18px 16px 20px;overflow:hidden;display:flex;flex-direction:column;gap:9px}
+.ocard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,var(--river))}
+.ocard.off{--c:var(--flag)} .ocard.plan{--c:var(--river)} .ocard.done{--c:var(--bank)} .ocard.cx{--c:var(--line)}
+.oc-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.ocard h3{font-size:17px;line-height:1.25}
+.oc-when{display:flex;gap:7px;align-items:center;color:var(--ink-2);font-weight:500;font-size:14px}
+.oc-when svg{width:16px;height:16px;color:var(--muted)}
+.oc-areas{display:flex;flex-wrap:wrap;gap:5px}
+.oc-msg{font-size:14px;color:var(--ink-2);white-space:pre-line}
+.oc-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:4px}
+.cd{font-weight:700;font-variant-numeric:tabular-nums}
+.prog{height:6px;border-radius:99px;background:var(--soft);overflow:hidden;flex:1}
+.prog i{display:block;height:100%;border-radius:99px;background:var(--flag);transition:width .5s}
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty .em{width:56px;height:56px;border-radius:14px;background:var(--bank-soft);color:var(--bank);display:grid;place-items:center;margin:0 auto 12px}
+.empty .em svg{width:28px;height:28px}
+.empty b{display:block;color:var(--ink);font-family:var(--display);font-size:18px;margin-bottom:4px}
+
+/* Feature tiles */
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tile{padding:22px}
+.tile .ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;margin-bottom:14px}
+.tile .ic svg{width:21px;height:21px}
+.tile h3{font-size:18px;margin-bottom:6px}
+.tile p{margin:0;color:var(--ink-2)}
+.ic.b{background:var(--river-soft);color:var(--river)} .ic.v{background:var(--sun-soft);color:var(--sun)} .ic.g{background:var(--bank-soft);color:var(--bank)} .ic.r{background:var(--flag-soft);color:var(--flag)} .ic.p{background:var(--river-soft);color:var(--river-deep)}
+
+/* Hospitals band */
+.hosp{border-radius:20px;padding:32px;display:grid;grid-template-columns:1.2fr 1fr;gap:30px;align-items:center;background:#fff;border:1px solid var(--line);position:relative;overflow:hidden}
+.hosp::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--flag)}
+.hosp h2{font-size:30px;margin:12px 0 18px}
+.hl{display:grid;gap:12px}
+.hl div{display:flex;gap:12px;align-items:flex-start;color:var(--ink-2)}
+.hl span{width:26px;height:26px;border-radius:8px;background:var(--flag-soft);color:var(--flag);display:grid;place-items:center;flex:none}
+.hl span svg{width:15px;height:15px}
+.mock{display:grid;gap:8px;background:var(--paper);border-radius:14px;padding:12px}
+.mn{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center}
+.mn .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex:none;margin:0}
+.mn .ic svg{width:19px;height:19px}
+.mn b{display:block;font-size:14px}
+.mn small{color:var(--muted);font-weight:500}
+.mn .btn{margin-left:auto}
+
+/* Auth */
+.authsplit{display:grid;grid-template-columns:1fr 1fr;min-height:calc(100vh - 64px)}
+.authside{position:relative;overflow:hidden;background:linear-gradient(160deg,#0070A8 0%,#004E7A 100%);color:#fff;padding:48px 56px;display:flex;flex-direction:column;justify-content:center}
+.authside::before,.authside::after{content:"";position:absolute;left:-30%;right:-30%;height:420px;border-radius:50%;pointer-events:none}
+.authside::before{top:-360px;border-bottom:5px solid rgba(0,131,81,.9)}
+.authside::after{bottom:-360px;border-top:5px solid rgba(0,139,198,.9)}
+.authside>*{position:relative;z-index:1;max-width:460px}
+.authside .alogo{background:#fff;border-radius:12px;padding:6px 10px;display:inline-flex;align-self:flex-start;margin-bottom:auto}
+.authside .alogo img{height:40px;display:block}
+.authside h2{font-size:clamp(34px,4vw,52px);line-height:1.04;letter-spacing:-.035em;font-weight:800;margin:40px 0 14px}
+.authside p{color:rgba(255,255,255,.82);font-size:16.5px;margin:0 0 22px}
+.authside .apill{display:inline-flex;gap:8px;align-items:center;background:#fff;color:var(--ink);border-radius:999px;padding:9px 16px;font-weight:700;align-self:flex-start}
+.authside .apill .live{color:var(--flag)}
+.authside .afoot{margin-top:auto;padding-top:40px;color:rgba(255,255,255,.7);font-size:13.5px}
+.authmain{display:grid;place-items:center;padding:40px 24px 100px;background:#fff}
+.authwrap{display:contents}
+.auth{width:100%;max-width:440px;padding:0;border:0!important;background:none!important}
+.auth h1{font-size:28px;margin-bottom:4px}
+.auth .sub{color:var(--muted);margin:0 0 22px}
+.auth .top-ic{width:48px;height:48px;border-radius:12px;background:var(--river-soft);color:var(--river);display:grid;place-items:center;margin-bottom:16px}
+.auth .top-ic svg{width:24px;height:24px}
+.kinds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.kind{border:1px solid var(--line);border-radius:var(--r-s);padding:11px 12px;cursor:pointer;background:#fff;text-align:left;display:flex;gap:11px;align-items:center;transition:border-color .15s,background .15s}
+.kind:hover{border-color:#B9C3D8}
+.kind.on{border-color:var(--river);background:var(--river-soft)}
+.kind .em{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:17px;flex:none;background:var(--paper)}
+.kind b{display:block;font-size:14px;font-weight:600} .kind small{color:var(--flag);font-size:11.5px;font-weight:600}
+.kgroup{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:18px 0 8px}
+.steps{display:flex;gap:5px;margin-bottom:20px}
+.steps i{height:4px;flex:1;border-radius:4px;background:var(--line)}
+.steps i.on{background:var(--river)}
+.codeinp{font-size:30px;letter-spacing:12px;text-align:center;font-weight:700}
+.linkbtn{background:none;border:0;color:var(--river);font-weight:600;cursor:pointer;padding:0}
+.infobox{border-radius:var(--r-s);padding:14px 16px;margin:14px 0;background:var(--river-soft);color:var(--ink)}
+.warnbox{border-radius:var(--r-s);padding:14px 16px;margin:14px 0;background:var(--flag-soft);color:#7A0C1C}
+.warnbox .inp{margin-top:10px}
+
+/* Area picker */
+.ap{border:1px solid var(--line);border-radius:var(--r);background:#fff;overflow:hidden}
+.ap .aps{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
+.ap .aps input{border:0;outline:none;flex:1;padding:4px;background:transparent;min-width:0}
+.ap .aps svg{color:var(--muted)}
+.ap .apbody{max-height:340px;overflow:auto;padding:4px 14px 10px}
+.ap .reg{display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px}
+.ap .reg b{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2)}
+.ap .chips{display:flex;flex-wrap:wrap;gap:6px}
+.ap .ac{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 13px;font-size:13.5px;cursor:pointer;font-weight:500;color:var(--ink)}
+.ap .ac:hover{border-color:#B9C3D8}
+.ap .ac.on{background:var(--river);border-color:var(--river);color:#fff}
+.ap .count{font-size:12px;font-weight:700;color:var(--river);background:var(--river-soft);border-radius:999px;padding:2px 9px;white-space:nowrap}
+.ap .count:empty{display:none}
+.ap .apsel{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px}
+.ap .apsel:not(:empty){padding:12px 14px 0}
+.ap .apsel .ac svg{width:13px;height:13px;vertical-align:-2px;margin-left:2px}
+.ap .regblk{border-bottom:1px solid var(--line);padding-bottom:8px}
+.ap .regblk:last-child{border-bottom:0}
+.ap .regt{flex:1;background:none;border:0;display:flex;gap:10px;align-items:center;cursor:pointer;padding:4px 0;text-align:left}
+.ap .regt .muted{font-size:12.5px;font-weight:500}
+.ap .regt .chev{margin-left:auto;color:var(--muted);font-size:20px;line-height:1;transition:transform .15s;padding-right:8px}
+.ap .regblk.open .chev{transform:rotate(90deg)}
+.ap .apadd{border-top:1px solid var(--line);padding:12px 14px;background:var(--paper)}
+.ap .apadd .linkbtn{display:flex;gap:6px;align-items:center;font-size:13.5px}
+.ap .apadd .linkbtn svg{width:16px;height:16px}
+.apaddf{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.apaddf .inp{flex:1 1 140px;padding:10px 12px;min-width:0;width:auto}
+.apaddf select.inp{flex:0 1 150px}
+
+/* Subscriber dashboard */
+.dash{padding:26px 0 110px}
+.dtop{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-bottom:14px}
+.dtop .pcard{box-shadow:none}
+.me{padding:22px;display:flex;flex-direction:column;gap:14px}
+.me .who{display:flex;gap:12px;align-items:center}
+.avatar{width:48px;height:48px;border-radius:12px;background:var(--river);color:#fff;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:19px;flex:none}
+.me h1{font-size:22px}
+.me .ways{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.way{background:var(--paper);border-radius:var(--r-s);padding:10px 12px;display:flex;gap:10px;align-items:center;min-width:0}
+.way svg{color:var(--river)}
+.way div{min-width:0} .way b{display:block;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .way small{color:var(--muted)}
+.banner{border-radius:var(--r);padding:14px 16px;display:flex;gap:12px;align-items:center;margin-bottom:14px;background:var(--flag-soft);color:#7A0C1C;border:1px solid #F6C3CA}
+.banner .ic{width:38px;height:38px;border-radius:10px;background:var(--flag);color:#fff;display:grid;place-items:center;flex:none}
+.banner div[style*="opacity"]{opacity:1!important;color:#7A0C1C}
+.dgrid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;align-items:start}
+.dgrid>*,.dtop>*{min-width:0}
+.feed{display:grid}
+.fi{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.fi:last-child{border-bottom:0}
+.fi .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none}
+.fi .ic svg{width:19px;height:19px}
+.fi .t{flex:1;min-width:0}
+.fi h4{font-size:15.5px}
+.areastat{display:grid;gap:6px}
+.as{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:var(--r-s);background:var(--paper);font-weight:600}
+
+/* Staff portal */
+.sp{display:grid;grid-template-columns:230px 1fr;gap:22px;padding:24px 0 110px}
+.sp>*{min-width:0}
+.side{position:sticky;top:88px;align-self:start;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:8px;display:grid;gap:2px}
+.side .sl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:10px 12px 6px}
+.side button{background:none;border:0;text-align:left;padding:9px 10px;border-radius:var(--r-s);color:var(--ink-2);font-weight:600;cursor:pointer;display:flex;gap:10px;align-items:center}
+.side button .ti{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--ink-2)}
+.side button .ti svg{width:18px;height:18px}
+.side button:hover{background:var(--paper)}
+.side button.on{background:var(--river-soft);color:var(--river-deep)}
+.side button.on .ti{color:var(--river)}
+.side .badge{margin-left:auto;background:var(--flag);color:#fff;border-radius:99px;font-size:11px;padding:1px 7px;font-weight:700}
+.side-logo{display:flex;gap:10px;align-items:center;padding:10px 10px 12px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.side-logo img{height:34px;width:auto}
+.side-logo b{display:block;font-family:var(--display);font-size:15px;line-height:1.2}
+.side-logo small{color:var(--muted);font-size:12px}
+.ph{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.ph h2{font-size:26px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.kpi{border-radius:var(--r);padding:16px;background:#fff;border:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.kpi .ki{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--river-soft);color:var(--river)}
+.kpi .ki svg{width:18px;height:18px}
+.kpi .v{font-family:var(--display);font-size:32px;font-weight:800;letter-spacing:-.03em;line-height:1}
+.kpi .l{font-size:13px;color:var(--muted);margin-top:4px}
+.k2 .ki{background:var(--flag-soft);color:var(--flag)} .k2 .v{color:var(--flag)}
+.k3 .ki{background:var(--sun-soft);color:var(--sun)}
+.k4 .ki{background:var(--bank-soft);color:var(--bank)}
+.k-alert{border-color:#F6C3CA}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tbl td{padding:13px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tr.click{cursor:pointer} .tbl tr.click:hover td{background:var(--paper)}
+.tscroll{overflow-x:auto}
+.seg{display:inline-flex;background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px;gap:2px}
+.seg button{border:0;background:none;color:var(--ink-2);font-weight:600;padding:8px 16px;border-radius:999px;cursor:pointer;display:flex;gap:7px;align-items:center}
+.seg button.on{background:var(--river);color:#fff}
+.seg button.on.em{background:var(--flag)}
+.bar{height:6px;background:var(--soft);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--bank);border-radius:99px}
+.bar i.part{background:#D9A33A}
+.statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.statgrid div{background:var(--paper);border-radius:var(--r-s);padding:10px 12px}
+.statgrid b{display:block;font-family:var(--display);font-size:22px}
+.statgrid span{font-size:12.5px;color:var(--muted)}
+.hero-o{border-radius:var(--r);padding:22px 22px 22px 24px;margin-bottom:14px;background:#fff;border:1px solid var(--line);position:relative;overflow:hidden}
+.hero-o::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--river)}
+.hero-o.off::before{background:var(--flag)} .hero-o.done::before{background:var(--bank)} .hero-o.cx::before{background:var(--line)}
+.hero-o h2{font-size:26px;margin:10px 0 4px}
+.hero-o .btn.white{border:1px solid var(--line)}
+.hero-o #rs{background:var(--bank);color:#fff;border:0}
+.callbtn{display:inline-flex;gap:6px;align-items:center;background:var(--river-soft);color:var(--river-deep);border-radius:99px;padding:4px 10px;font-weight:600;text-decoration:none;font-size:13px}
+.callbtn svg.i{width:14px;height:14px}
+
+/* Mobile tab bar */
+.tabbar{display:none}
+.toasts{position:fixed;top:78px;right:20px;z-index:100;display:grid;gap:8px;pointer-events:none}
+.toast{display:flex;gap:12px;align-items:center;background:#fff;color:var(--ink);border:1px solid var(--line);padding:12px 18px 12px 12px;border-radius:14px;font-weight:600;box-shadow:0 12px 32px rgba(14,27,43,.14);max-width:min(420px,calc(100vw - 32px));animation:tin .28s cubic-bezier(.2,.9,.3,1.2) both;pointer-events:auto}
+.toast.out{animation:tout .22s ease-in both}
+.toast .ti{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--bank);color:#fff}
+.toast .ti svg{width:17px;height:17px;stroke-width:3}
+.toast.err .ti{background:var(--flag)} .toast.info .ti{background:var(--river)}
+@keyframes tin{from{opacity:0;transform:translateY(-8px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes tout{to{opacity:0;transform:translateY(-6px)}}
+.modal-bg{position:fixed;inset:0;z-index:150;background:rgba(14,27,43,.28);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:20px;animation:fade .18s both}
+.modal{background:#fff;border-radius:18px;padding:22px;width:100%;max-width:420px;box-shadow:0 24px 70px rgba(14,27,43,.25);animation:tin .22s cubic-bezier(.2,.9,.3,1.2) both}
+.modal h3{font-size:20px;margin-bottom:6px}
+.modal p{margin:0 0 18px;color:var(--ink-2)}
+.modal .row>*{flex:1}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.ptitle{margin:4px 0 18px}
+.ptitle h1{font-size:clamp(30px,4vw,42px);letter-spacing:-.035em;font-weight:800}
+.ptitle p{margin:4px 0 0;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.stat b{display:block;font-family:var(--display);font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.stat span{font-size:13px;color:var(--muted);font-weight:500}
+.stat.red b{color:var(--flag)} .stat.amber b{color:var(--sun)} .stat.green b{color:var(--bank)}
+.action{position:relative;overflow:hidden;border-radius:20px;padding:24px;margin-bottom:14px;background:linear-gradient(160deg,#0070A8 0%,#004E7A 100%);color:#fff}
+.action::after{content:"";position:absolute;width:280px;height:280px;border-radius:50%;right:-90px;top:-130px;background:rgba(255,255,255,.07)}
+.action>*{position:relative;z-index:1}
+.action h2{font-size:24px} .action p{margin:4px 0 16px;color:rgba(255,255,255,.8)}
+.action .bar2{display:flex;gap:8px;background:#fff;border-radius:999px;padding:6px 6px 6px 18px;align-items:center}
+.action .bar2 input{flex:1;border:0;outline:none;font-size:16px;color:var(--ink);min-width:0;background:none}
+.action .bar2 .btn{flex:none}
+.action .seg2{display:flex;gap:6px;margin-bottom:12px}
+.action .seg2 button{border:1px solid rgba(255,255,255,.35);background:none;color:#fff;border-radius:999px;padding:6px 14px;font-weight:600;cursor:pointer}
+.action .seg2 button.on{background:#fff;color:var(--river-deep);border-color:#fff}
+.action .seg2 button.on.em{background:var(--flag);color:#fff;border-color:var(--flag)}
+.topbar{position:fixed;top:0;left:0;height:3px;width:0;z-index:200;background:linear-gradient(90deg,#008351,#008BC6,#E31B23);opacity:0;transition:width .3s ease,opacity .3s}
+.topbar.on{opacity:1}
+.inp.bad{border-color:var(--flag);box-shadow:0 0 0 3px var(--flag-soft)}
+.btn.done{background:var(--bank)!important;color:#fff!important}
+.spin{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+.btn.white .spin,.btn.ghost .spin{border-color:rgba(11,27,58,.2);border-top-color:var(--ink)}
+.loading{display:grid;place-items:center;padding:60px;color:var(--muted)}
+.loading .spin{border-color:var(--line);border-top-color:var(--river);width:28px;height:28px}
+@keyframes sp{to{transform:rotate(360deg)}}
+footer{padding:28px 0 36px;color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);background:#fff}
+
+@media (max-width:960px){
+  .authsplit{grid-template-columns:1fr;min-height:0}
+  .authside{padding:26px 20px 30px}
+  .authside .alogo{display:none}
+  .authside h2{font-size:30px;margin:6px 0 8px}
+  .authside p{font-size:15px;margin-bottom:14px}
+  .authside .afoot{display:none}
+  .authmain{padding:26px 16px 110px;place-items:start center}
+  .hero::before{display:none}
+  .hero::after{bottom:-480px}
+  .toasts{top:auto;bottom:84px;left:16px;right:16px}
+  .toast{margin:0 auto}
+  .hero .wrap{grid-template-columns:1fr;gap:28px}
+  .hero{padding:32px 0 40px}
+  .ogrid,.tiles{grid-template-columns:1fr}
+  .hosp{grid-template-columns:1fr;padding:24px}
+  .dtop,.dgrid{grid-template-columns:1fr}
+  .sp{grid-template-columns:1fr;gap:14px;padding-top:14px}
+  .side{display:none}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .statgrid{grid-template-columns:repeat(2,1fr)}
+  .top nav .navlink{display:none}
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;background:#fff;border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom));justify-content:space-around}
+  .tabbar button{flex:1;background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--muted);padding:6px 2px;cursor:pointer}
+  .tabbar button.on{color:var(--river)}
+  footer{padding-bottom:100px}
+}
+@media (max-width:560px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .action .bar2{flex-wrap:wrap;border-radius:14px;padding:8px}
+  .action .bar2 .btn{width:100%}
+  .wrap{padding:0 16px}
+  .kinds{grid-template-columns:1fr}
+  .me .ways{grid-template-columns:1fr}
+  .auth{padding:0}
+  .sh h2{font-size:24px}
+  .hosp h2{font-size:25px}
+  .brand .logo{height:32px}
+  .brand #brandTxt{font-size:15px;padding-left:10px}
+}
+</style>
+</head>
+<body>
+<div class="blobs"><i></i><i></i><i></i></div>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" data-go="home">
+      <img class="logo" src="/nawec-logo.png" alt="NAWEC">
+      <span id="brandTxt">Alerts<small>Power status</small></span>
+    </a>
+    <nav id="nav"></nav>
+  </div>
+</header>
+<div class="topbar" id="topbar"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<main id="app"></main>
+<nav class="tabbar" id="tabbar"></nav>
+<footer id="foot"><div class="wrap" style="display:flex;gap:12px;align-items:center"><img src="/nawec-logo.png" alt="NAWEC" style="height:28px"> NAWEC Alerts · Outage warnings by email and SMS</div></footer>
+
+<script>
+/* ============ Icons ============ */
+const IC = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 21a2 2 0 0 0 4 0"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+  chart: '<path d="M4 20V11M10 20V5M16 20v-6M2 20h20"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
+  pin: '<path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m3 7 9 6 9-6"/>',
+  phone: '<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2"/>',
+  sms: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.5A8 8 0 1 1 21 12z"/>',
+  hosp: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M12 8v8M8 12h8"/>',
+  shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+  alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
+  plug: '<path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  logout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  arrowL: '<path d="M15 18 9 12l6-6"/>',
+};
+const ic = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24">${IC[n] || ''}</svg>`;
+
+/* ============ Utilities ============ */
+const $ = (s, r = document) => r.querySelector(s);
+const h = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TZ = 'Africa/Banjul';
+const fmt = (d, opts) => d ? new Intl.DateTimeFormat('en-GB', { timeZone: TZ, ...(opts || { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }).format(new Date(d)) : '';
+const sameDay = (a, b) => fmt(a, { day: 'numeric', month: 'numeric', year: 'numeric' }) === fmt(b, { day: 'numeric', month: 'numeric', year: 'numeric' });
+const fmtRange = (a, b) => b ? `${fmt(a)} – ${sameDay(a, b) ? fmt(b, { hour: '2-digit', minute: '2-digit' }) : fmt(b)}` : `From ${fmt(a)}`;
+const ago = (d) => { const m = Math.round((Date.now() - new Date(d)) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; const hr = Math.round(m / 60); if (hr < 24) return hr + ' h ago'; return fmt(d, { day: 'numeric', month: 'short' }); };
+function dur(ms) {
+  ms = Math.max(0, ms); const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), hr = Math.floor((m % 1440) / 60), mi = m % 60;
+  if (d) return `${d}d ${hr}h`; if (hr) return `${hr}h ${mi}m`; return `${mi}m`;
+}
+function parts(ms) { ms = Math.max(0, ms); const s = Math.floor(ms / 1000); return { d: Math.floor(s / 86400), h: Math.floor(s % 86400 / 3600), m: Math.floor(s % 3600 / 60), s: s % 60 }; }
+const pad2 = (n) => String(n).padStart(2, '0');
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
+function toast(msg, type, ms = 3600) {
+  if (typeof type === 'number') { ms = type; type = ''; }
+  type = type || 'ok';
+  const t = document.createElement('div'); t.className = 'toast ' + type;
+  t.innerHTML = `<span class="ti">${ic(type === 'err' ? 'x' : type === 'info' ? 'bell' : 'check')}</span><span></span>`;
+  t.lastChild.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 230); }, ms);
+}
+const toastErr = (msg) => toast(msg, 'err', 4500);
+/* thin progress line while the app talks to the server */
+let pending = 0, barT;
+function progress(d) {
+  pending = Math.max(0, pending + d); const bar = $('#topbar'); if (!bar) return;
+  clearTimeout(barT);
+  if (pending > 0) { bar.classList.add('on'); bar.style.width = Math.min(85, 25 + Math.random() * 30) + '%'; }
+  else { bar.style.width = '100%'; barT = setTimeout(() => { bar.classList.remove('on'); setTimeout(() => (bar.style.width = '0'), 300); }, 250); }
+}
+async function api(method, path, body) {
+  const headers = { 'content-type': 'application/json' };
+  const tok = store.get('na_token'); if (tok) headers.authorization = 'Bearer ' + tok;
+  let res;
+  progress(1);
+  try { res = await fetch('/api' + path, { method, headers, body: body ? JSON.stringify(body) : undefined }); }
+  catch { progress(-1); throw new Error('No connection. Check your internet and try again.'); }
+  progress(-1);
+  let data = {}; try { data = await res.json(); } catch {}
+  if (res.status === 401 && tok && !path.startsWith('/auth')) { store.set('na_token', null); S.user = null; }
+  if (!res.ok) { const e = new Error(data.error || 'Request failed'); e.status = res.status; throw e; }
+  return data;
+}
+async function busy(btn, fn) {
+  const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = old; }
+}
+const showErr = (el, msg) => { if (el) el.innerHTML = msg ? `<div class="err">${h(msg)}</div>` : ''; if (msg) toastErr(msg); };
+
+const KINDS = {
+  hospital: ['🏥', 'Hospital', 'critical'], clinic: ['🩺', 'Clinic', 'critical'], health_centre: ['➕', 'Health centre', 'critical'],
+  dialysis: ['💉', 'Dialysis / ICU', 'critical'], care_home: ['🛏️', 'Care home', 'critical'], water_pumping: ['🚰', 'Water pumping', 'critical'],
+  pharmacy: ['💊', 'Pharmacy', ''], school: ['🏫', 'School', ''], business: ['🏢', 'Business', ''], household: ['🏠', 'Home', ''], other: ['📍', 'Other', ''],
+};
+const isCriticalKind = (k) => KINDS[k]?.[2] === 'critical';
+
+/* Live countdown ticker: any element with data-until / data-since updates every second */
+setInterval(() => {
+  document.querySelectorAll('[data-until]').forEach((el) => { el.textContent = dur(new Date(el.dataset.until) - Date.now()); });
+  document.querySelectorAll('[data-since]').forEach((el) => { el.textContent = dur(Date.now() - new Date(el.dataset.since)); });
+  document.querySelectorAll('[data-prog]').forEach((el) => {
+    const [a, b] = el.dataset.prog.split('|').map((x) => new Date(x).getTime());
+    el.style.width = Math.min(100, Math.max(2, (Date.now() - a) / (b - a) * 100)) + '%';
+  });
+  const pc = $('#pcCount'); if (pc && pc.dataset.t) {
+    const p = parts(new Date(pc.dataset.t) - Date.now());
+    pc.innerHTML = (p.d ? `<div><b>${p.d}</b><span>days</span></div>` : '') + `<div><b>${pad2(p.h)}</b><span>hrs</span></div><div><b>${pad2(p.m)}</b><span>min</span></div>` + (p.d ? '' : `<div><b>${pad2(p.s)}</b><span>sec</span></div>`);
+  }
+}, 1000);
+
+/* ============ State & router ============ */
+const S = { user: null, areas: [], outs: null, view: 'home', params: {}, staffTab: 'overview', filter: 'all' };
+async function loadAreas() { if (!S.areas.length) S.areas = await api('GET', '/areas'); return S.areas; }
+function go(view, params = {}) {
+  S.view = view; S.params = params;
+  const url = view === 'home' ? '/' : '/#' + view + (params.id ? '/' + params.id : '');
+  if (location.pathname + location.hash !== url) history.pushState({ view, params }, '', url);
+  render(); window.scrollTo(0, 0);
+}
+window.addEventListener('popstate', (e) => { const st = e.state || parseHash(); S.view = st.view; S.params = st.params || {}; render(); });
+function parseHash() { const [v, id] = location.hash.replace(/^#/, '').split('/'); return { view: v || 'home', params: id ? { id } : {} }; }
+document.addEventListener('click', (e) => {
+  const g = e.target.closest('[data-go]');
+  if (g) { e.preventDefault(); go(g.dataset.go, g.dataset.id ? { id: g.dataset.id } : {}); }
+});
+const isStaff = () => S.user && ['staff', 'admin'].includes(S.user.role);
+
+function renderNav() {
+  const n = $('#nav'), u = S.user, v = S.view;
+  const on = (x) => (v === x ? 'on' : '');
+  n.innerHTML = u ? `
+    <button class="navlink ${on('home')}" data-go="home">${ic('home')} Outages</button>
+    ${isStaff() ? `<button class="navlink ${on('staff')}" data-go="staff">${ic('chart')} Staff portal</button>` : ''}
+    <button class="navlink ${on('dashboard')}" data-go="dashboard">${ic('bell')} My alerts</button>
+    <button class="btn white sm" id="logout">${ic('logout')} <span>Sign out</span></button>` : `
+    <button class="navlink ${on('home')}" data-go="home">${ic('home')} Outages</button>
+    <button class="navlink ${on('login')}" data-go="login">Sign in</button>
+    <button class="btn sm" data-go="register">${ic('bolt')} Get alerts</button>`;
+  const lo = $('#logout'); if (lo) lo.onclick = async () => { try { await api('POST', '/auth/logout'); } catch {} store.set('na_token', null); S.user = null; go('home'); toast('Signed out.', 'info'); };
+  // mobile tab bar
+  const tb = $('#tabbar');
+  const tab = (view, icon, label, extra = '') => `<button class="${v === view ? 'on' : ''}" data-go="${view}">${ic(icon)}${label}${extra}</button>`;
+  tb.innerHTML = u
+    ? tab('home', 'home', 'Outages') + tab('dashboard', 'bell', 'My alerts') + (isStaff() ? tab('staff', 'chart', 'Staff') : '') + tab('profile', 'user', 'Account')
+    : tab('home', 'home', 'Outages') + tab('register', 'bolt', 'Get alerts') + tab('login', 'user', 'Sign in');
+}
+
+let LOGO_OK = false;
+function render() {
+  const v = S.view;
+  document.body.classList.toggle('staff', v === 'staff');
+  $('#brandTxt').innerHTML = v === 'staff' ? 'Control room<small>Staff only</small>' : 'Alerts<small>Power status</small>';
+  renderNav();
+  if (['dashboard', 'profile', 'staff'].includes(v) && !S.user) return go('login');
+  if (v === 'staff' && !isStaff()) return go('dashboard');
+  if (['login', 'register'].includes(v) && S.user) return go(isStaff() ? 'staff' : 'dashboard');
+  ({ home: viewHome, login: viewLogin, register: viewRegister, verify: viewVerify, forgot: viewForgot, ack: viewAck,
+     dashboard: viewDashboard, profile: viewProfile, staff: viewStaff }[v] || viewHome)();
+}
+const app = () => $('#app');
+const loading = () => { app().innerHTML = '<div class="loading"><div class="spin"></div></div>'; };
+
+/* ============ Outage helpers ============ */
+function stateOf(o) {
+  if (o.status === 'restored') return { cls: 'done', chip: 'green', t: 'Restored', icon: 'check' };
+  if (o.status === 'cancelled') return { cls: 'cx', chip: 'grey', t: 'Cancelled', icon: 'x' };
+  if (o.status === 'active' || new Date(o.starts_at) <= new Date()) return { cls: 'off', chip: 'red', t: o.kind === 'emergency' ? 'Outage now' : 'Power off now', icon: 'alert', live: true };
+  return { cls: 'plan', chip: 'blue', t: 'Planned', icon: 'clock' };
+}
+function outageCard(o, mine) {
+  const st = stateOf(o);
+  const areas = o.areas || [];
+  const now = Date.now(), start = new Date(o.starts_at), end = o.ends_at ? new Date(o.ends_at) : null;
+  let foot = '';
+  if (st.cls === 'off') {
+    foot = end && end > now
+      ? `<div class="prog"><i data-prog="${start.toISOString()}|${end.toISOString()}" style="width:${Math.min(100, (now - start) / (end - start) * 100)}%"></i></div><span class="muted" style="font-weight:700;font-size:13px">back in <span class="cd" data-until="${end.toISOString()}">${dur(end - now)}</span></span>`
+      : `<span class="muted" style="font-weight:700;font-size:13px">off for <span class="cd" data-since="${start.toISOString()}">${dur(now - start)}</span></span>`;
+  } else if (st.cls === 'plan') {
+    foot = `<span class="chip volt">${ic('clock')} starts in <span class="cd" data-until="${start.toISOString()}">${dur(start - now)}</span></span>`;
+  } else if (st.cls === 'done' && o.restored_at) {
+    foot = `<span class="muted" style="font-weight:700;font-size:13px">Back on ${h(ago(o.restored_at))}</span>`;
+  }
+  return `<div class="card ocard ${st.cls} rise">
+    <div class="oc-head"><h3>${h(o.title)}</h3><span class="chip ${st.chip}">${st.live ? '<span class="live"></span>' : ''}${st.t}</span></div>
+    <div class="oc-when">${ic('clock')} ${h(fmtRange(o.starts_at, o.ends_at))}</div>
+    <div class="oc-areas">${areas.map((a) => `<span class="chip ${mine && mine.has(a.id) ? 'mine' : ''}">${ic('pin')}${h(a.name)}</span>`).join('')}</div>
+    ${o.message ? `<div class="oc-msg">${h(o.message)}</div>` : ''}
+    ${foot ? `<div class="oc-foot">${foot}</div>` : ''}
+  </div>`;
+}
+// status of one area given the outage list
+function areaStatus(areaId, outs) {
+  const mine = outs.filter((o) => o.areas.some((a) => a.id === areaId) && ['active', 'scheduled'].includes(o.status));
+  const off = mine.find((o) => o.status === 'active' || new Date(o.starts_at) <= new Date());
+  if (off) return { s: 'off', o: off };
+  const next = mine.sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))[0];
+  if (next) return { s: 'soon', o: next };
+  return { s: 'on' };
+}
+
+/* Area picker */
+const REGION_ORDER = ['Banjul', 'Kanifing', 'West Coast', 'North Bank', 'Lower River', 'Central River', 'Upper River'];
+function areaPicker(selected = []) {
+  const sel = new Set(selected.map(Number));
+  const open = new Set();
+  const wrap = document.createElement('div'); wrap.className = 'ap';
+  wrap.innerHTML = `<div class="aps">${ic('search')}<input placeholder="Search any town or village, e.g. Tallinding"><span class="count"></span></div><div class="apsel"></div><div class="apbody"></div>
+    <div class="apadd"><button type="button" class="linkbtn" data-addtoggle>${ic('plus')} My place isn't listed</button>
+      <div class="apaddf hidden"><input class="inp" placeholder="Name of your place" maxlength="60"><select class="inp">${REGION_ORDER.map((r) => `<option>${r}</option>`).join('')}</select><button type="button" class="btn sm">Add</button></div></div>`;
+  const body = $('.apbody', wrap), inp = $('.aps input', wrap), cnt = $('.count', wrap), selBox = $('.apsel', wrap);
+  const match = (a, term) => !term || a.name.toLowerCase().includes(term) || a.region.toLowerCase().includes(term);
+  const regions = () => [...new Set([...REGION_ORDER, ...S.areas.map((a) => a.region)])];
+  const draw = () => {
+    const term = inp.value.trim().toLowerCase(), byReg = {};
+    for (const a of S.areas) if (match(a, term)) (byReg[a.region] ||= []).push(a);
+    selBox.innerHTML = sel.size ? S.areas.filter((a) => sel.has(a.id)).map((a) => `<button type="button" class="ac on" data-a="${a.id}">${h(a.name)} ${ic('x')}</button>`).join('') : '';
+    const list = regions().filter((r) => byReg[r]);
+    body.innerHTML = list.length ? list.map((r) => {
+      const items = byReg[r], isOpen = term || open.has(r), nSel = items.filter((a) => sel.has(a.id)).length;
+      return `<div class="regblk ${isOpen ? 'open' : ''}">
+        <div class="reg"><button type="button" class="regt" data-open="${h(r)}"><b>${h(r)}</b><span class="muted">${items.length} place${items.length === 1 ? "" : "s"}${nSel ? ` · <span style="color:var(--blue)">${nSel} picked</span>` : ''}</span><span class="chev">›</span></button>
+        ${isOpen ? `<button type="button" class="linkbtn" data-reg="${h(r)}" style="font-size:12.5px">${items.every((a) => sel.has(a.id)) ? 'Clear' : 'Select all'}</button>` : ''}</div>
+        ${isOpen ? `<div class="chips">${items.map((a) => `<button type="button" class="ac ${sel.has(a.id) ? 'on' : ''}" data-a="${a.id}">${h(a.name)}</button>`).join('')}</div>` : ''}</div>`;
+    }).join('') : `<div class="muted" style="padding:16px 2px;font-weight:600">No place called “${h(inp.value)}” yet. Add it below.</div>`;
+    cnt.textContent = sel.size ? `${sel.size} selected` : '';
+  };
+  wrap.addEventListener('click', async (e) => {
+    const a = e.target.closest('[data-a]');
+    if (a) { const id = +a.dataset.a; sel.has(id) ? sel.delete(id) : sel.add(id); draw(); wrap.dispatchEvent(new Event('change')); return; }
+    const o = e.target.closest('[data-open]');
+    if (o) { const r = o.dataset.open; open.has(r) ? open.delete(r) : open.add(r); draw(); return; }
+    const r = e.target.closest('[data-reg]');
+    if (r) {
+      const term = inp.value.trim().toLowerCase();
+      const list = S.areas.filter((x) => x.region === r.dataset.reg && match(x, term));
+      const all = list.every((x) => sel.has(x.id));
+      list.forEach((x) => (all ? sel.delete(x.id) : sel.add(x.id))); draw(); wrap.dispatchEvent(new Event('change')); return;
+    }
+    if (e.target.closest('[data-addtoggle]')) {
+      const f = $('.apaddf', wrap); f.classList.toggle('hidden');
+      if (!f.classList.contains('hidden')) { $('input', f).value = inp.value.trim(); $('input', f).focus(); }
+      return;
+    }
+    const addBtn = e.target.closest('.apaddf .btn');
+    if (addBtn) {
+      const f = $('.apaddf', wrap), name = $('input', f).value.trim(), region = $('select', f).value;
+      if (name.length < 2) return toastErr('Type the name of your place.');
+      await busy(addBtn, async () => {
+        try {
+          const area = await api('POST', '/areas', { name, region });
+          if (!S.areas.some((x) => x.id === area.id)) S.areas.push(area);
+          S.areas.sort((x, y) => x.region.localeCompare(y.region) || x.name.localeCompare(y.name));
+          sel.add(area.id); inp.value = ''; f.classList.add('hidden'); open.add(area.region);
+          toast(`${area.name} added.`); draw(); wrap.dispatchEvent(new Event('change'));
+        } catch (err) { toastErr(err.message); }
+      });
+    }
+  });
+  inp.addEventListener('input', draw);
+  draw();
+  return { el: wrap, get: () => [...sel] };
+}
+
+/* ============ Power card ============ */
+function powerCard(areaId) {
+  const el = $('#pcard'); if (!el || !S.outs) return;
+  const area = S.areas.find((a) => a.id === areaId);
+  const st = area ? areaStatus(area.id, S.outs) : { s: 'on' };
+  el.className = 'pcard ' + st.s;
+  const byR = {}; S.areas.forEach((a) => (byR[a.region] ||= []).push(a));
+  const opts = REGION_ORDER.filter((r) => byR[r]).concat(Object.keys(byR).filter((r) => !REGION_ORDER.includes(r)))
+    .map((r) => `<optgroup label="${h(r)}">${byR[r].map((a) => `<option value="${a.id}" ${a.id === areaId ? 'selected' : ''}>${h(a.name)}</option>`).join('')}</optgroup>`).join('');
+  let state, sub, target = '';
+  if (st.s === 'off') {
+    state = 'Power OFF'; sub = h(st.o.title);
+    if (st.o.ends_at && new Date(st.o.ends_at) > new Date()) target = st.o.ends_at;
+    sub += target ? ' · expected back in' : '';
+  } else if (st.s === 'soon') {
+    state = 'Cut coming'; sub = `${h(st.o.title)} · ${h(fmt(st.o.starts_at))}`; target = st.o.starts_at;
+  } else {
+    state = 'Power ON'; sub = 'No cuts planned for this area';
+  }
+  el.innerHTML = `
+    <div class="pc-top">
+      <div><div class="pc-label">Your area</div><select class="pc-area" id="pcArea" aria-label="Choose area">${opts}</select></div>
+      <div class="pc-bolt">${st.s === 'off' ? ic('x') : st.s === 'on' ? ic('check') : ic('clock')}</div>
+    </div>
+    <div class="pc-mid">
+      <div class="pc-label" style="display:flex;gap:8px;align-items:center">${st.s === 'off' ? '<span class="live"></span>' : ''}Live status</div>
+      <div class="pc-state">${state}</div>
+      <div class="pc-sub">${sub}</div>
+      ${target ? `<div class="pc-count" id="pcCount" data-t="${new Date(target).toISOString()}"></div>` : ''}
+    </div>
+    <svg class="wave" viewBox="0 0 400 120" preserveAspectRatio="none"><path d="M0 80 C 60 40, 100 110, 160 70 S 260 30, 320 70 S 380 90, 400 60"/><path d="M0 100 C 70 70, 120 120, 190 90 S 300 60, 400 90" style="opacity:.6"/></svg>`;
+  $('#pcArea').onchange = (e) => { store.set('na_area', e.target.value); powerCard(+e.target.value); };
+}
+
+/* ============ Public home ============ */
+async function viewHome() {
+  app().innerHTML = `
+  <section class="hero"><div class="wrap">
+    <div class="rise">
+      <span class="eyebrow"><b>LIVE</b> Official NAWEC outage alerts</span>
+      <h1>Know <span class="g">before</span><br>the power goes off.</h1>
+      <p class="lead">Pick your areas and get a message the moment a cut is planned, when it starts, and when power is back. Hospitals and clinics are warned first.</p>
+      <div class="ctas">
+        <button class="btn" data-go="register">${ic('bolt')} Get alerts for my area</button>
+        <button class="btn white" id="regHosp">${ic('hosp')} Register a hospital</button>
+      </div>
+      <div class="trust">
+        <div><span class="ic b">${ic('mail')}</span>Email</div>
+        <div><span class="ic g">${ic('sms')}</span>SMS</div>
+        <div><span class="ic r">${ic('shield')}</span>Hospitals first</div>
+      </div>
+    </div>
+    <div class="rise"><div class="pcard" id="pcard"><div class="loading" style="margin:auto"><div class="spin"></div></div></div></div>
+  </div></section>
+
+  <section class="s" id="outages"><div class="wrap">
+    <div class="sh">
+      <div><h2>Outages right now</h2><div class="muted">Posted live by NAWEC staff</div></div>
+      <div class="filters" id="filters"></div>
+    </div>
+    <div class="ogrid" id="olist"><div class="loading" style="grid-column:1/-1"><div class="spin"></div></div></div>
+  </div></section>
+
+  <section class="s"><div class="wrap">
+    <div class="tiles">
+      <div class="card tile rise"><div class="ic b">${ic('pin')}</div><h3>Choose your areas</h3><p>Home, work, your family's house. Pick every area you care about.</p></div>
+      <div class="card tile rise"><div class="ic v">${ic('bolt')}</div><h3>Get warned early</h3><p>Planned cuts arrive ahead of time. Emergencies arrive the moment staff post them.</p></div>
+      <div class="card tile rise"><div class="ic g">${ic('check')}</div><h3>Know when it's back</h3><p>Another message lands as soon as power is restored.</p></div>
+    </div>
+  </div></section>
+
+  <section class="s"><div class="wrap">
+    <div class="hosp">
+      <div>
+        <span class="chip red">${ic('hosp')} For hospitals &amp; clinics</span>
+        <h2>No more surprise cuts in the middle of surgery.</h2>
+        <div class="hl">
+          <div><span>${ic('bolt')}</span>Critical sites are alerted first, by email and SMS.</div>
+          <div><span>${ic('shield')}</span>Planned cuts must give hospitals advance notice, or staff must record why they can't.</div>
+          <div><span>${ic('clock')}</span>A reminder goes out about an hour before the cut.</div>
+          <div><span>${ic('phone')}</span>Your team taps “I received this”. NAWEC calls anyone who hasn't.</div>
+        </div>
+        <button class="btn red" id="regHosp2" style="margin-top:24px">${ic('hosp')} Register a critical facility</button>
+      </div>
+      <div class="mock">
+        <div class="mn"><div class="ic b">${ic('bolt')}</div><div><b>Planned cut · Bundung</b><small>Sat 09:00 – 14:00</small></div></div>
+        <div class="mn" style="box-shadow:0 0 0 2px var(--red),var(--sh)"><div class="ic r">${ic('hosp')}</div><div><b>Critical facility</b><small>Please confirm you got this</small></div><span class="btn red sm">I received this</span></div>
+        <div class="mn"><div class="ic v">${ic('clock')}</div><div><b>Reminder · cut in 1 hour</b><small>Check backup power now</small></div></div>
+        <div class="mn"><div class="ic g">${ic('check')}</div><div><b>Power restored</b><small>Supply is back on</small></div></div>
+      </div>
+    </div>
+  </div></section>`;
+  const hosp = () => go('register', { kind: 'hospital' });
+  $('#regHosp').onclick = hosp; $('#regHosp2').onclick = hosp;
+
+  try {
+    const [outs] = await Promise.all([api('GET', '/public/outages'), loadAreas()]);
+    S.outs = outs;
+    if (!$('#olist')) return;
+    // power card: saved area → user's first area → first area with an outage → first area
+    const saved = +store.get('na_area');
+    const pick = (S.areas.find((a) => a.id === saved) || S.user?.areas?.[0] || outs[0]?.areas?.[0] || S.areas[0])?.id;
+    powerCard(pick);
+    const mine = new Set((S.user?.areas || []).map((a) => a.id));
+    const groups = {
+      all: outs,
+      off: outs.filter((o) => stateOf(o).cls === 'off'),
+      plan: outs.filter((o) => stateOf(o).cls === 'plan'),
+      done: outs.filter((o) => stateOf(o).cls === 'done'),
+      ...(mine.size ? { mine: outs.filter((o) => o.areas.some((a) => mine.has(a.id))) } : {}),
+    };
+    const labels = { all: 'All', off: 'Off now', plan: 'Planned', done: 'Restored', mine: 'My areas' };
+    const draw = () => {
+      $('#filters').innerHTML = Object.keys(groups).map((k) => `<button class="pill ${S.filter === k ? 'on' : ''}" data-f="${k}">${labels[k]} <span class="n">${groups[k].length}</span></button>`).join('');
+      $('#filters').querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { S.filter = b.dataset.f; draw(); });
+      const list = groups[S.filter] || outs;
+      $('#olist').innerHTML = list.length ? list.map((o) => outageCard(o, mine)).join('')
+        : `<div class="card empty" style="grid-column:1/-1"><div class="em">${ic('check')}</div><b>All clear</b>No outages here right now. Sign up and we'll tell you before the next one.</div>`;
+    };
+    draw();
+  } catch (e) {
+    $('#olist').innerHTML = `<div class="card empty" style="grid-column:1/-1">${h(e.message)}</div>`;
+  }
+}
+
+/* ============ Auth ============ */
+const AUTH_SIDE = {
+  login: ['Know before the power goes off.', 'Sign in once. Your outage alerts stay right here.'],
+  register: ['Never be caught by a power cut again.', 'Pick your places. We warn you before the power goes, and tell you when it is back.'],
+  verify: ['Almost there.', 'Confirm your email and your alerts are on.'],
+  forgot: ['Locked out?', 'We will email you a code to set a new password.'],
+  ack: ['Thank you.', 'Your confirmation helps NAWEC keep patients safe.'],
+};
+function authShell(inner) {
+  const [t, sub] = AUTH_SIDE[S.view] || AUTH_SIDE.login;
+  app().innerHTML = `<div class="authsplit">
+    <aside class="authside"><span class="alogo"><img src="/nawec-logo.png" alt="NAWEC"></span>
+      <h2>${t}</h2><p>${sub}</p>
+      <span class="apill"><span class="live"></span> Live outage alerts · email &amp; SMS</span>
+      <div class="afoot">Hospitals and clinics are always warned first.</div></aside>
+    <div class="authmain"><div class="auth rise">${inner}</div></div></div>`;
+}
+
+function viewLogin() {
+  authShell(`
+    <h1>Welcome back</h1><p class="sub">Sign in to see your alerts.</p>
+    <div id="e"></div>
+    <form id="f">
+      <label class="f"><span>Email</span><input class="inp" name="email" type="email" autocomplete="email" required></label>
+      <label class="f"><span>Password</span><input class="inp" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn block" id="b">Sign in</button>
+    </form>
+    <p style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:18px 0 0;font-size:14px;font-weight:600">
+      <button class="linkbtn" data-go="forgot">Forgot password?</button>
+      <span>New here? <button class="linkbtn" data-go="register">Create an account</button></span>
+    </p>`);
+  $('#f').onsubmit = (ev) => {
+    ev.preventDefault();
+    const fd = Object.fromEntries(new FormData(ev.target));
+    busy($('#b'), async () => {
+      try {
+        const r = await api('POST', '/auth/login', fd);
+        if (r.need_verify) return go('verify', { email: r.email });
+        signedIn(r);
+      } catch (e) { showErr($('#e'), e.message); }
+    });
+  };
+}
+function signedIn(r) { store.set('na_token', r.token); S.user = r.user; go(['staff', 'admin'].includes(r.user.role) ? 'staff' : 'dashboard'); }
+
+function viewRegister() {
+  const st = { step: 1, kind: S.params.kind || '', data: {}, areas: [] };
+  const draw = async () => {
+    const bar = `<div class="steps">${[1, 2, 3].map((i) => `<i class="${i <= st.step ? 'on' : ''}"></i>`).join('')}</div>`;
+    if (st.step === 1) {
+      const card = ([k, [em, label, c]]) => `<button type="button" class="kind ${c ? 'crit' : ''} ${st.kind === k ? 'on' : ''}" data-k="${k}"><span class="em">${em}</span><span><b>${label}</b>${c ? '<small>First alert + SMS</small>' : ''}</span></button>`;
+      const ent = Object.entries(KINDS);
+      authShell(`${bar}<h1>Who are the alerts for?</h1><p class="sub">Critical facilities are always warned first.</p>
+        <div class="kgroup">Critical facilities</div><div class="kinds">${ent.filter(([, v]) => v[2]).map(card).join('')}</div>
+        <div class="kgroup">Everyone else</div><div class="kinds">${ent.filter(([, v]) => !v[2]).map(card).join('')}</div>
+        <button class="btn block" id="n" style="margin-top:20px" ${st.kind ? '' : 'disabled'}>Continue</button>
+        <p style="text-align:center;font-size:14px;margin:16px 0 0;font-weight:600">Already have an account? <button class="linkbtn" data-go="login">Sign in</button></p>`);
+      app().querySelectorAll('[data-k]').forEach((b) => b.onclick = () => { st.kind = b.dataset.k; draw(); });
+      $('#n').onclick = () => { st.step = 2; draw(); };
+    } else if (st.step === 2) {
+      const crit = isCriticalKind(st.kind), d = st.data;
+      const orgLabel = st.kind === 'household' ? '' : `<label class="f"><span>${crit ? 'Facility name' : 'Organisation name'} ${crit ? '' : '<small>(optional)</small>'}</span><input class="inp" name="org_name" value="${h(d.org_name)}" ${crit ? 'required' : ''} placeholder="${crit ? 'e.g. Westfield Clinic' : ''}"></label>`;
+      authShell(`${bar}<h1>Your details</h1><p class="sub">${KINDS[st.kind][0]} ${KINDS[st.kind][1]}${crit ? ' · <span class="chip red" style="vertical-align:1px">critical facility</span>' : ''}</p>
+        <div id="e"></div>
+        <form id="f">
+          ${orgLabel}
+          <label class="f"><span>${crit ? 'Contact person (e.g. duty manager)' : 'Your name'}</span><input class="inp" name="name" value="${h(d.name)}" required autocomplete="name"></label>
+          <label class="f"><span>Phone ${crit ? '<small>for SMS and urgent calls</small>' : '<small>for SMS alerts</small>'}</span><input class="inp" name="phone" value="${h(d.phone)}" type="tel" placeholder="+220 7XXXXXX" ${crit ? 'required' : ''} autocomplete="tel"></label>
+          <label class="f"><span>Email</span><input class="inp" name="email" type="email" value="${h(d.email)}" required autocomplete="email"></label>
+          ${crit ? `<div class="infobox" style="margin:-4px 0 16px;font-size:13.5px;font-weight:600">Tip: use a shared inbox the whole team reads, like the theatre or admin email.</div>` : ''}
+          <label class="f"><span>Password <small>8+ characters</small></span><input class="inp" name="password" type="password" minlength="8" required autocomplete="new-password"></label>
+          ${crit ? '' : `<label class="check" style="margin-bottom:18px"><input type="checkbox" name="sms_opt_in" ${d.sms_opt_in === false ? '' : 'checked'}> Also send me SMS alerts</label>`}
+          <div class="row"><button type="button" class="btn ghost" id="bk">Back</button><button class="btn">Continue</button></div>
+        </form>`);
+      $('#bk').onclick = () => { st.step = 1; draw(); };
+      $('#f').onsubmit = (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.target);
+        st.data = { ...Object.fromEntries(fd), sms_opt_in: crit ? true : fd.get('sms_opt_in') === 'on' };
+        st.step = 3; draw();
+      };
+    } else {
+      authShell(`${bar}<h1>Pick your areas</h1><p class="sub">You'll get alerts for every area you pick.</p><div id="e"></div><div id="ap"><div class="loading"><div class="spin"></div></div></div>
+        <div class="row" style="margin-top:18px"><button type="button" class="btn ghost" id="bk">Back</button><button class="btn" id="go">${ic('bolt')} Turn on alerts</button></div>`);
+      $('#bk').onclick = () => { st.step = 2; draw(); };
+      try { await loadAreas(); } catch (e) { return showErr($('#e'), e.message); }
+      const p = areaPicker(st.areas); $('#ap').replaceChildren(p.el);
+      p.el.addEventListener('change', () => { st.areas = p.get(); });
+      $('#go').onclick = (ev) => busy(ev.currentTarget, async () => {
+        st.areas = p.get();
+        if (!st.areas.length) return showErr($('#e'), 'Choose at least one area.');
+        try {
+          const r = await api('POST', '/auth/register', { ...st.data, kind: st.kind, area_ids: st.areas });
+          if (r.need_verify) return go('verify', { email: r.email });
+          toast('You\'re in. Alerts are on.'); signedIn(r);
+        } catch (e) {
+          showErr($('#e'), e.message);
+          if (e.status === 409) setTimeout(() => go('login'), 1800);
+        }
+      });
+    }
+  };
+  draw();
+}
+
+function viewVerify() {
+  const email = S.params.email || store.get('na_pending_email') || '';
+  store.set('na_pending_email', email);
+  if (!email) return go('login');
+  authShell(`
+    <div class="top-ic">${ic('mail')}</div>
+    <h1>Check your email</h1><p class="sub">We sent a 6-digit code to <b style="color:var(--ink)">${h(email)}</b></p>
+    <div id="e"></div>
+    <form id="f">
+      <input class="inp codeinp" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required autofocus>
+      <button class="btn block" id="b" style="margin-top:16px">Confirm</button>
+    </form>
+    <p style="text-align:center;font-size:14px;margin:16px 0 0;font-weight:600">No email? Check spam, or <button class="linkbtn" id="rs">send a new code</button></p>`);
+  $('#f').onsubmit = (ev) => {
+    ev.preventDefault();
+    busy($('#b'), async () => {
+      try {
+        const r = await api('POST', '/auth/verify', { email, code: ev.target.code.value.trim() });
+        store.set('na_pending_email', null); toast('Email confirmed. Alerts are on.'); signedIn(r);
+      } catch (e) { showErr($('#e'), e.message); }
+    });
+  };
+  $('#rs').onclick = async () => { try { await api('POST', '/auth/resend', { email }); toast('New code sent. Check your inbox.', 'info'); } catch (e) { showErr($('#e'), e.message); } };
+}
+
+function viewForgot() {
+  let email = '';
+  authShell(`<div class="top-ic">${ic('shield')}</div><h1>Reset password</h1><p class="sub">We'll email you a code.</p><div id="e"></div>
+    <form id="f1"><label class="f"><span>Email</span><input class="inp" name="email" type="email" required></label><button class="btn block" id="b1">Send code</button></form>
+    <form id="f2" class="hidden">
+      <label class="f"><span>Code</span><input class="inp codeinp" name="code" inputmode="numeric" maxlength="6" required></label>
+      <label class="f"><span>New password</span><input class="inp" name="password" type="password" minlength="8" required autocomplete="new-password"></label>
+      <button class="btn block" id="b2">Set new password</button>
+    </form>
+    <p style="text-align:center;font-size:14px;margin:16px 0 0"><button class="linkbtn" data-go="login">Back to sign in</button></p>`);
+  $('#f1').onsubmit = (ev) => { ev.preventDefault(); email = ev.target.email.value;
+    busy($('#b1'), async () => { try { await api('POST', '/auth/forgot', { email }); $('#f1').classList.add('hidden'); $('#f2').classList.remove('hidden'); $('#e').innerHTML = '<div class="ok">If that email has an account, a code is on its way.</div>'; } catch (e) { showErr($('#e'), e.message); } }); };
+  $('#f2').onsubmit = (ev) => { ev.preventDefault();
+    busy($('#b2'), async () => { try { signedIn(await api('POST', '/auth/reset', { email, code: ev.target.code.value.trim(), password: ev.target.password.value })); toast('Password updated.'); } catch (e) { showErr($('#e'), e.message); } }); };
+}
+
+async function viewAck() {
+  authShell('<div class="loading"><div class="spin"></div></div>');
+  try {
+    const r = await api('POST', '/ack', { token: S.params.token });
+    const o = r.outage;
+    authShell(`<div style="text-align:center">
+      <div class="top-ic" style="margin:0 auto 18px;background:linear-gradient(135deg,#0FBF86,#1F8CFF);width:76px;height:76px;border-radius:24px">${ic('check')}</div>
+      <h1>Confirmed. Thank you.</h1>
+      <p class="sub">${h(r.facility || 'Your facility')} has received this warning. NAWEC can see your confirmation.</p></div>
+      ${o ? `<div class="fi" style="margin-bottom:16px"><div class="ic" style="background:var(--sky);color:var(--blue)">${ic('bolt')}</div><div class="t"><h4>${h(o.title)}</h4><div class="muted" style="font-size:14px;font-weight:600">${h(fmtRange(o.starts_at, o.ends_at))}</div><div style="font-size:14px;margin-top:4px;font-weight:600">${o.areas.map((a) => h(a.name)).join(', ')}</div></div></div>` : ''}
+      <div class="warnbox" style="margin-top:0;font-weight:600;font-size:14px">Please plan surgeries and life support around this time, and check your backup power.</div>
+      <button class="btn block" data-go="${S.user ? 'dashboard' : 'home'}">Done</button>`);
+  } catch (e) {
+    authShell(`<h1>Link not valid</h1><p class="sub">${h(e.message)}</p><button class="btn block" data-go="home">Go home</button>`);
+  }
+}
+
+/* ============ Subscriber dashboard ============ */
+async function viewDashboard() {
+  loading();
+  let alerts = [];
+  try { [S.user, alerts, S.outs] = await Promise.all([api('GET', '/me'), api('GET', '/me/alerts'), api('GET', '/public/outages')]); await loadAreas(); }
+  catch (e) { app().innerHTML = `<div class="wrap dash"><div class="err">${h(e.message)}</div></div>`; return; }
+  renderNav();
+  const u = S.user, k = KINDS[u.kind] || KINDS.other;
+  const pending = alerts.filter((a) => u.critical && !a.acked_at && ['notice', 'reminder'].includes(a.stage) && ['scheduled', 'active'].includes(a.status));
+  const look = (a) => ({
+    notice: a.kind === 'emergency' ? ['red', 'alert', 'Emergency'] : ['blue', 'bolt', 'Planned cut'],
+    reminder: ['orange', 'clock', 'Reminder'], restored: ['green', 'check', 'Restored'], cancelled: ['grey', 'x', 'Cancelled'],
+  }[a.stage]);
+  const tone = { red: ['var(--red-soft)', 'var(--red)'], blue: ['var(--sky)', 'var(--blue)'], orange: ['var(--orange-soft)', 'var(--orange)'], green: ['var(--green-soft)', 'var(--green-d)'], grey: ['#EFF0F5', '#6A7190'] };
+  const initials = (u.org_name || u.name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const myIds = u.areas.map((a) => a.id);
+  const saved = +store.get('na_area');
+  const pcArea = myIds.includes(saved) ? saved : myIds[0];
+
+  const offN = u.areas.filter((a) => areaStatus(a.id, S.outs).s === 'off').length;
+  const soonN = u.areas.filter((a) => areaStatus(a.id, S.outs).s === 'soon').length;
+  app().innerHTML = `<div class="wrap dash">
+    <div class="ptitle rise"><h1>My alerts</h1><p>${u.areas.length} place${u.areas.length === 1 ? '' : 's'} on alert · ${h(u.org_name || u.name)}</p></div>
+    <div class="stats rise">
+      <div class="stat"><b>${u.areas.length}</b><span>Places on alert</span></div>
+      <div class="stat ${offN ? 'red' : 'green'}"><b>${offN}</b><span>Off right now</span></div>
+      <div class="stat ${soonN ? 'amber' : ''}"><b>${soonN}</b><span>Cuts coming</span></div>
+      ${u.critical ? `<div class="stat ${pending.length ? 'red' : 'green'}"><b>${pending.length}</b><span>To confirm</span></div>` : `<div class="stat"><b>${alerts.length}</b><span>Alerts received</span></div>`}
+    </div>
+    ${pending.length ? `<div class="banner rise"><div class="ic">${ic('hosp')}</div><div style="flex:1"><b style="font-size:16px">${pending.length} ${pending.length > 1 ? 'warnings need' : 'warning needs'} your confirmation</b><div style="font-size:14px;opacity:.9;font-weight:600">Tap “I received this” so NAWEC knows your team is ready.</div></div></div>` : ''}
+    <div class="dtop">
+      <div class="pcard rise" id="pcard"></div>
+      <div class="card me rise">
+        <div class="who"><div class="avatar">${h(initials)}</div><div style="min-width:0">
+          <div class="muted" style="font-weight:700;font-size:13px">${k[0]} ${h(k[1])}</div>
+          <h1 style="overflow:hidden;text-overflow:ellipsis">${h(u.org_name || u.name)}</h1></div></div>
+        ${u.critical ? `<span class="chip ${u.critical_verified ? 'green' : 'volt'}" style="align-self:flex-start">${ic('shield')} ${u.critical_verified ? 'Verified critical site' : 'Critical site · NAWEC checking'}</span>` : ''}
+        <div class="ways">
+          <div class="way">${ic('mail')}<div><b>${h(u.email)}</b><small>Email on</small></div></div>
+          <div class="way">${ic('sms')}<div><b>${u.phone ? h(u.phone) : 'No number'}</b><small>${u.critical ? 'SMS always on' : u.sms_opt_in && u.phone ? 'SMS on' : 'SMS off'}</small></div></div>
+        </div>
+        <div class="row">
+          <button class="btn ghost" data-go="profile">${ic('edit')} Edit details</button>
+          ${isStaff() ? `<button class="btn volt" data-go="staff">${ic('chart')} Staff portal</button>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="dgrid">
+      <div class="card pad rise">
+        <div class="ph" style="margin-bottom:14px"><h2 style="font-size:20px">Your alerts</h2><span class="chip">${alerts.length}</span></div>
+        <div class="feed">${alerts.length ? alerts.map((a) => { const [c, icon, label] = look(a); const [bg, fg] = tone[c]; return `<div class="fi">
+          <div class="ic" style="background:${bg};color:${fg}">${ic(icon)}</div>
+          <div class="t"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="chip ${c}" style="font-size:11.5px">${label}</span><span class="muted" style="font-size:12.5px;font-weight:700">${a.sent_at ? h(ago(a.sent_at)) : 'sending…'}</span></div>
+            <h4 style="margin-top:6px">${h(a.title)}</h4><div class="muted" style="font-size:13.5px;font-weight:600">${h(fmtRange(a.starts_at, a.ends_at))}</div>
+            ${a.message ? `<div style="font-size:14px;margin-top:6px;white-space:pre-line;color:var(--ink-2)">${h(a.message)}</div>` : ''}
+            ${a.acked_at ? `<div style="margin-top:8px"><span class="chip green">${ic('check')} Confirmed ${h(ago(a.acked_at))}</span></div>` : ''}
+            ${u.critical && !a.acked_at && ['notice', 'reminder'].includes(a.stage) ? `<button class="btn red sm" data-ack="${a.id}" style="margin-top:10px">${ic('check')} I received this</button>` : ''}
+          </div></div>`; }).join('') : `<div class="empty"><div class="em" style="background:var(--sky);color:var(--blue)">${ic('bell')}</div><b>No alerts yet</b>When an outage hits your areas, it shows up here and in your inbox.</div>`}</div>
+      </div>
+      <div class="card pad rise">
+        <div class="ph" style="margin-bottom:14px"><h2 style="font-size:20px">Your areas</h2><button class="linkbtn" data-go="profile">Change</button></div>
+        <div class="areastat">${u.areas.map((a) => { const st = areaStatus(a.id, S.outs); return `<div class="as"><span style="display:flex;gap:8px;align-items:center">${ic('pin')}${h(a.name)}</span>${
+          st.s === 'off' ? '<span class="chip red"><span class="live"></span>Off now</span>' : st.s === 'soon' ? `<span class="chip volt">Cut in ${dur(new Date(st.o.starts_at) - Date.now())}</span>` : '<span class="chip green">Power on</span>'}</div>`; }).join('') || '<div class="muted">No areas yet.</div>'}</div>
+      </div>
+    </div></div>`;
+  if (pcArea) powerCard(pcArea); else $('#pcard').remove();
+  app().querySelectorAll('[data-ack]').forEach((b) => b.onclick = () => busy(b, async () => {
+    try { await api('POST', '/me/ack/' + b.dataset.ack); toast('Confirmed. NAWEC can see your team is ready.'); viewDashboard(); } catch (e) { toastErr(e.message); }
+  }));
+}
+
+async function viewProfile() {
+  loading();
+  try { await loadAreas(); S.user = await api('GET', '/me'); } catch (e) { app().innerHTML = `<div class="wrap dash"><div class="err">${h(e.message)}</div></div>`; return; }
+  const u = S.user;
+  app().innerHTML = `<div class="wrap dash" style="max-width:780px">
+    <div class="ph"><h2>Your details</h2><div class="row" style="flex:0 0 auto"><button class="btn ghost sm" data-go="dashboard">${ic('arrowL')} Back</button><button class="btn white sm" id="lo2">${ic('logout')} Sign out</button></div></div>
+    <div class="card pad rise"><div id="e"></div>
+    <form id="f">
+      <label class="f"><span>Type</span><select class="inp" name="kind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}" ${k === u.kind ? 'selected' : ''}>${v[0]} ${v[1]}${v[2] ? ' (critical)' : ''}</option>`).join('')}</select></label>
+      <div class="row">
+        <label class="f"><span>Name</span><input class="inp" name="name" value="${h(u.name)}" required></label>
+        <label class="f"><span>Facility / organisation</span><input class="inp" name="org_name" value="${h(u.org_name)}"></label>
+      </div>
+      <div class="row">
+        <label class="f"><span>Phone</span><input class="inp" name="phone" type="tel" value="${h(u.phone)}" placeholder="+220 7XXXXXX"></label>
+        <label class="f"><span>Email</span><input class="inp" value="${h(u.email)}" disabled style="background:var(--soft)"></label>
+      </div>
+      <label class="check" style="margin-bottom:20px"><input type="checkbox" name="sms_opt_in" ${u.sms_opt_in ? 'checked' : ''}> Send me SMS alerts <span class="muted" style="font-weight:600">(always on for critical sites)</span></label>
+      <div style="margin-bottom:20px"><span style="display:block;font-weight:700;font-size:13.5px;margin-bottom:7px;color:var(--ink-2)">Areas</span><div id="ap"></div></div>
+      <button class="btn block" id="b">Save changes</button>
+    </form></div></div>`;
+  $('#lo2').onclick = async () => { try { await api('POST', '/auth/logout'); } catch {} store.set('na_token', null); S.user = null; go('home'); toast('Signed out.', 'info'); };
+  const p = areaPicker(u.areas.map((a) => a.id)); $('#ap').replaceChildren(p.el);
+  $('#f').onsubmit = (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    busy($('#b'), async () => {
+      try {
+        S.user = await api('PUT', '/me', { ...Object.fromEntries(fd), sms_opt_in: fd.get('sms_opt_in') === 'on', area_ids: p.get() });
+        toast('Saved. Your alerts now follow these places.'); go('dashboard');
+      } catch (e) { showErr($('#e'), e.message); window.scrollTo(0, 0); }
+    });
+  };
+}
+
+/* ============ Staff portal ============ */
+const TABS = [['overview', 'chart', 'Overview'], ['new', 'bolt', 'New alert'], ['outages', 'list', 'Outages'], ['subscribers', 'users', 'Subscribers'], ['areas', 'pin', 'Places']];
+async function viewStaff() {
+  if (S.params.id) S.staffTab = 'outage';
+  const cur = S.staffTab === 'outage' ? 'outages' : S.staffTab;
+  app().innerHTML = `<div class="wrap sp">
+    <aside class="side">${LOGO_OK ? `<div class="side-logo"><img src="/nawec-logo.png" alt="NAWEC"><div><b>Control room</b><small>Outage alerts</small></div></div>` : '<div class="sl">Staff portal</div>'}${TABS.map(([k, icon, l]) => `<button data-tab="${k}" class="${cur === k ? 'on' : ''}"><span class="ti">${ic(icon)}</span>${l}${k === 'overview' ? '<span class="badge hidden" id="ub"></span>' : ''}</button>`).join('')}</aside>
+    <section id="pane"><div class="loading"><div class="spin"></div></div></section></div>`;
+  // mobile: tabs as a scrollable pill row
+  if (matchMedia('(max-width:960px)').matches) {
+    const pane = $('#pane');
+    const row = document.createElement('div'); row.className = 'filters'; row.style.cssText = 'margin:0 0 -8px;flex-wrap:nowrap;overflow-x:auto;padding:2px 2px 4px';
+    row.innerHTML = TABS.map(([k, icon, l]) => `<button class="pill ${cur === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('');
+    pane.before(row);
+  }
+  app().querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { S.staffTab = b.dataset.tab; S.params = {}; history.pushState({ view: 'staff', params: {} }, '', '/#staff'); viewStaff(); });
+  try { await loadAreas(); } catch {}
+  const pane = $('#pane');
+  try {
+    if (S.staffTab === 'overview') await staffOverview(pane);
+    else if (S.staffTab === 'new') staffNew(pane);
+    else if (S.staffTab === 'outages') await staffOutages(pane);
+    else if (S.staffTab === 'outage') await staffOutage(pane, S.params.id);
+    else if (S.staffTab === 'subscribers') await staffSubscribers(pane);
+    else if (S.staffTab === 'areas') staffAreas(pane);
+  } catch (e) { pane.innerHTML = `<div class="err">${h(e.message)}</div>`; }
+}
+const openOutage = (id) => { S.staffTab = 'outage'; S.params = { id }; history.pushState({ view: 'staff', params: { id } }, '', '/#staff/' + id); viewStaff(); };
+
+async function staffOverview(pane) {
+  const [s, outs] = await Promise.all([api('GET', '/staff/stats'), api('GET', '/staff/outages')]);
+  if (s.unconfirmed_critical) { const b = $('#ub'); if (b) { b.textContent = s.unconfirmed_critical; b.classList.remove('hidden'); } }
+  const live = outs.filter((o) => ['active', 'scheduled'].includes(o.status));
+  const hr = new Date().getHours();
+  pane.innerHTML = `
+    <div class="ptitle"><h1>Control room</h1><p>Good ${hr < 12 ? 'morning' : hr < 17 ? 'afternoon' : 'evening'}, ${h((S.user.name || '').split(' ')[0])}. ${live.length ? `${live.length} outage${live.length > 1 ? 's' : ''} live or coming up.` : 'No outages right now.'}</p></div>
+    <div class="kpis">
+      <div class="kpi k1 rise"><div class="ki">${ic('users')}</div><div><div class="v">${s.subscribers}</div><div class="l">Subscribers</div></div></div>
+      <div class="kpi k4 rise"><div class="ki">${ic('hosp')}</div><div><div class="v">${s.critical_sites}</div><div class="l">Critical sites${s.critical_unverified ? ` · ${s.critical_unverified} to check` : ''}</div></div></div>
+      <div class="kpi k3 rise"><div class="ki">${ic('bolt')}</div><div><div class="v">${s.active_outages}<span style="font-size:18px;opacity:.7"> / ${s.scheduled_outages}</span></div><div class="l">Off now / scheduled</div></div></div>
+      <div class="kpi k2 rise ${s.unconfirmed_critical ? 'k-alert' : ''}"><div class="ki">${ic('phone')}</div><div><div class="v">${s.unconfirmed_critical}</div><div class="l">Hospitals not confirmed</div></div></div>
+    </div>
+    <div class="action rise">
+      <h2>Post an outage</h2><p>People in the places you pick are alerted at once. Hospitals and clinics go first.</p>
+      <div class="seg2"><button class="on" data-qk="planned">Planned cut</button><button class="em" data-qk="emergency">Emergency</button></div>
+      <form class="bar2" id="qf"><input id="qt" placeholder="What's happening? e.g. Transformer repair in Bundung" maxlength="160"><button class="btn">${ic('bolt')} Continue</button></form>
+    </div>
+    <div class="card pad rise"><div class="ph" style="margin-bottom:10px"><h3 style="font-size:18px">Live &amp; upcoming</h3><span class="chip">${live.length}</span></div>
+      ${live.length ? outageTable(live) : `<div class="empty"><div class="em">${ic('check')}</div><b>All clear</b>No active or scheduled outages.</div>`}
+    </div>`;
+  let qk = 'planned';
+  pane.querySelectorAll('[data-qk]').forEach((b) => b.onclick = () => { qk = b.dataset.qk; pane.querySelectorAll('[data-qk]').forEach((x) => x.classList.toggle('on', x === b)); });
+  $('#qf').onsubmit = (e) => { e.preventDefault(); S.draft = { title: $('#qt').value.trim(), kind: qk }; S.staffTab = 'new'; viewStaff(); };
+  bindRows(pane);
+}
+function outageTable(list) {
+  return `<div class="tscroll"><table class="tbl"><thead><tr><th>Outage</th><th>When</th><th>Reached</th><th>Hospitals confirmed</th><th></th></tr></thead><tbody>${list.map(outageRow).join('')}</tbody></table></div>`;
+}
+function outageRow(o) {
+  const st = stateOf(o);
+  const pct = o.critical_total ? Math.round(o.critical_acked / o.critical_total * 100) : 100;
+  return `<tr class="click" data-o="${o.id}">
+    <td><b>${h(o.title)}</b><div class="muted" style="font-size:12.5px;font-weight:600">${h(o.area_names || '')}</div></td>
+    <td style="white-space:nowrap;font-weight:600">${h(fmtRange(o.starts_at, o.ends_at))}<div style="margin-top:6px;display:flex;gap:6px"><span class="chip ${st.chip}">${st.live ? '<span class="live"></span>' : ''}${st.t}</span>${o.kind === 'emergency' ? '<span class="chip red">Emergency</span>' : ''}</div></td>
+    <td><b style="font-size:16px">${o.recipients}</b></td>
+    <td style="min-width:150px">${o.critical_total ? `<b>${o.critical_acked}/${o.critical_total}</b><div class="bar" style="margin-top:6px"><i class="${pct < 100 ? 'part' : ''}" style="width:${Math.max(pct, 4)}%"></i></div>` : '<span class="muted" style="font-weight:600">None affected</span>'}</td>
+    <td style="color:var(--muted)">›</td></tr>`;
+}
+function bindRows(pane) { pane.querySelectorAll('[data-o]').forEach((r) => r.onclick = () => openOutage(r.dataset.o)); }
+function toLocalInput(d) { const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return x.toISOString().slice(0, 16); }
+
+function staffNew(pane) {
+  const st = { kind: 'planned' };
+  const start = new Date(Date.now() + 24 * 3600e3); start.setMinutes(0, 0, 0);
+  const end = new Date(start.getTime() + 4 * 3600e3);
+  pane.innerHTML = `
+    <div class="ph"><h2>New outage alert</h2>
+      <div class="seg"><button data-kind="planned" class="on">${ic('clock')} Planned cut</button><button data-kind="emergency" class="em">${ic('alert')} Emergency</button></div></div>
+    <div class="card pad rise"><div id="e"></div>
+    <form id="f">
+      <label class="f"><span>Title</span><input class="inp" name="title" required maxlength="160" placeholder="e.g. Maintenance on Kanifing feeder line"></label>
+      <div class="row">
+        <label class="f"><span>Power off from</span><input class="inp" type="datetime-local" name="starts_at" value="${toLocalInput(start)}"></label>
+        <label class="f"><span>Expected back <small>(optional)</small></span><input class="inp" type="datetime-local" name="ends_at" value="${toLocalInput(end)}"></label>
+      </div>
+      <label class="f"><span>Message <small>reason and advice</small></span><textarea class="inp" name="message" maxlength="2000" placeholder="Why the power is going off and anything people should do."></textarea></label>
+      <div style="margin-bottom:6px"><span style="display:block;font-weight:700;font-size:13.5px;margin-bottom:7px;color:var(--ink-2)">Affected areas</span><div id="ap"></div></div>
+      <div id="pv"></div>
+      <div id="ov"></div>
+      <button class="btn block" id="send" style="margin-top:14px">${ic('bolt')} Send alert</button>
+    </form></div>`;
+  const p = areaPicker([]); $('#ap').replaceChildren(p.el);
+  const f = $('#f');
+  const draft = S.draft; S.draft = null;
+  let preview = null, pvTimer;
+  const sendBtn = $('#send');
+  const setKind = (k) => {
+    st.kind = k;
+    pane.querySelectorAll('[data-kind]').forEach((b) => b.classList.toggle('on', b.dataset.kind === k));
+    sendBtn.className = 'btn block ' + (k === 'emergency' ? 'red' : '');
+    if (k === 'emergency') f.starts_at.value = toLocalInput(new Date());
+    checkNotice();
+  };
+  pane.querySelectorAll('[data-kind]').forEach((b) => b.onclick = () => setKind(b.dataset.kind));
+  if (draft) setTimeout(() => { if (draft.title) f.title.value = draft.title; if (draft.kind === 'emergency') setKind('emergency'); $('.aps input', p.el).focus(); }, 0);
+  const checkNotice = () => {
+    const ov = $('#ov');
+    const crit = preview?.critical?.length || 0;
+    const hours = (new Date(f.starts_at.value) - Date.now()) / 3600e3;
+    const minH = preview?.min_notice_hours ?? 2;
+    if (st.kind === 'planned' && crit && hours < minH) {
+      if (!$('#orr')) ov.innerHTML = `<div class="warnbox"><b style="display:flex;gap:8px;align-items:center">${ic('alert')} Too little notice for ${crit} critical site${crit > 1 ? 's' : ''}</b>
+        <div style="font-size:14px;margin-top:4px;font-weight:600">Planned cuts must give hospitals at least ${minH} hours' notice. Move the start time later, or record why this can't wait.</div>
+        <textarea class="inp" id="orr" placeholder="Reason this cut can't wait (saved in the audit log)"></textarea></div>`;
+    } else ov.innerHTML = '';
+  };
+  const loadPreview = async () => {
+    const ids = p.get();
+    if (!ids.length) { preview = null; $('#pv').innerHTML = ''; checkNotice(); return; }
+    try {
+      preview = await api('POST', '/staff/preview', { area_ids: ids });
+      const c = preview.critical;
+      $('#pv').innerHTML = `<div class="infobox"><div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <div><div style="font-size:30px;font-weight:800;line-height:1">${preview.total}</div><div class="muted" style="font-weight:700;font-size:13px">will be alerted</div></div>
+          <div><div style="font-size:30px;font-weight:800;line-height:1;color:var(--red)">${c.length}</div><div class="muted" style="font-weight:700;font-size:13px">critical sites, first</div></div></div>
+        ${c.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">${c.map((x) => `<span class="chip red">${h(KINDS[x.kind]?.[0] || '')} ${h(x.org_name || x.name)}</span>`).join('')}</div>` : ''}</div>`;
+      checkNotice();
+    } catch (e) { $('#pv').innerHTML = `<div class="err">${h(e.message)}</div>`; }
+  };
+  p.el.addEventListener('change', () => { clearTimeout(pvTimer); pvTimer = setTimeout(loadPreview, 300); });
+  f.starts_at.addEventListener('change', checkNotice);
+  f.onsubmit = (ev) => {
+    ev.preventDefault();
+    const ids = p.get();
+    if (!ids.length) return showErr($('#e'), 'Choose at least one affected area.');
+    const body = {
+      kind: st.kind, title: f.title.value, message: f.message.value, area_ids: ids,
+      starts_at: f.starts_at.value ? new Date(f.starts_at.value).toISOString() : null,
+      ends_at: f.ends_at.value ? new Date(f.ends_at.value).toISOString() : null,
+      override_reason: $('#orr')?.value || '',
+    };
+    const who = preview ? `${preview.total} ${preview.total === 1 ? 'person' : 'people'}` : 'everyone in these places';
+    const crit = preview?.critical?.length || 0;
+    confirmBox({
+      title: st.kind === 'emergency' ? 'Send emergency alert?' : 'Send planned cut alert?',
+      text: preview && !preview.total ? 'Nobody has signed up for these places yet. The outage still shows on the public page right away.' : `This goes out now to ${who}${crit ? `, starting with ${crit} hospital${crit > 1 ? 's' : ''} or clinic${crit > 1 ? 's' : ''} by email and SMS` : ''}. It can't be unsent.`,
+      ok: 'Send alert', danger: st.kind === 'emergency',
+    }).then((yes) => yes && busy(sendBtn, async () => {
+      try {
+        const r = await api('POST', '/staff/outages', body);
+        toast(`Alert sent to ${r.result.recipients} ${r.result.recipients === 1 ? 'person' : 'people'}: ${r.result.emailSent} email, ${r.result.smsSent} SMS${r.result.stillPending ? `. ${r.result.stillPending} still sending.` : '.'}`, 6000);
+        openOutage(r.id);
+      } catch (e) {
+        showErr($('#e'), e.message); pane.scrollIntoView();
+        if (e.status === 422) checkNotice();
+      }
+    }));
+  };
+}
+// Confirm pop-up with a blurred background (no browser dialogs)
+function confirmBox({ title, text, ok = 'Confirm', danger = false }) {
+  return new Promise((resolve) => {
+    const bg = document.createElement('div'); bg.className = 'modal-bg';
+    bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true"><h3></h3><p></p><div class="row"><button class="btn ghost" data-no>Cancel</button><button class="btn ${danger ? 'red' : ''}" data-yes></button></div></div>`;
+    $('h3', bg).textContent = title; $('p', bg).textContent = text; $('[data-yes]', bg).textContent = ok;
+    const done = (v) => { bg.remove(); document.removeEventListener('keydown', key); resolve(v); };
+    const key = (e) => { if (e.key === 'Escape') done(false); };
+    bg.addEventListener('click', (e) => { if (e.target === bg || e.target.closest('[data-no]')) done(false); if (e.target.closest('[data-yes]')) done(true); });
+    document.addEventListener('keydown', key);
+    document.body.appendChild(bg); $('[data-yes]', bg).focus();
+  });
+}
+
+async function staffOutages(pane) {
+  const outs = await api('GET', '/staff/outages');
+  pane.innerHTML = `<div class="ph"><h2>All outages</h2><span class="chip">${outs.length}</span></div>
+    <div class="card pad rise" style="padding:10px 14px">${outs.length ? outageTable(outs) : `<div class="empty"><div class="em">${ic('check')}</div><b>Nothing yet</b>No outages posted.</div>`}</div>`;
+  bindRows(pane);
+}
+
+async function staffOutage(pane, id) {
+  const { outage: o, stages, critical } = await api('GET', '/staff/outages/' + id);
+  const st = stateOf(o);
+  const names = { notice: 'First alert', reminder: 'Reminder (critical sites)', restored: 'Restored notice', cancelled: 'Cancellation' };
+  const waiting = critical.filter((c) => !c.acked_at);
+  pane.innerHTML = `
+    <button class="btn ghost sm" id="bk" style="margin-bottom:14px">${ic('arrowL')} All outages</button>
+    <div class="hero-o ${st.cls} rise">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip ${st.chip}">${st.live ? '<span class="live"></span>' : ''}${st.t}</span>${o.kind === 'emergency' ? '<span class="chip red">Emergency</span>' : ''}</div>
+      <h2>${h(o.title)}</h2>
+      <div style="font-weight:700;opacity:.92">${h(fmtRange(o.starts_at, o.ends_at))}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">${o.areas.map((a) => `<span class="chip">${ic('pin')}${h(a.name)}</span>`).join('')}</div>
+      ${o.message ? `<div style="margin-top:12px;white-space:pre-line;opacity:.95">${h(o.message)}</div>` : ''}
+      <div class="row" style="margin-top:18px">
+        ${['active', 'scheduled'].includes(o.status) ? `<button class="btn white" id="rs" style="flex:0 0 auto">${ic('check')} Power restored</button>` : ''}
+        ${o.status === 'scheduled' ? `<button class="btn white" id="cn" style="flex:0 0 auto">${ic('x')} Cancel cut</button>` : ''}
+      </div>
+    </div>
+    ${o.override_reason ? `<div class="warnbox"><b>Short-notice override:</b> ${h(o.override_reason)}</div>` : ''}
+    <div class="card pad rise" style="margin-bottom:18px">
+      <div class="ph" style="margin-bottom:12px"><h3 style="font-size:18px">Critical sites</h3>${critical.length ? `<span class="chip ${waiting.length ? 'red' : 'green'}">${critical.length - waiting.length}/${critical.length} confirmed</span>` : ''}</div>
+      ${critical.length ? `<div class="tscroll"><table class="tbl"><thead><tr><th>Facility</th><th>Contact</th><th>Delivered</th><th>Status</th></tr></thead><tbody>
+        ${critical.map((c) => `<tr><td><b>${h(KINDS[c.kind]?.[0] || '')} ${h(c.org_name || c.name)}</b>${c.critical_verified ? '' : ' <span class="chip volt">unverified</span>'}</td>
+          <td style="font-weight:600">${h(c.name)}<div style="margin-top:4px">${c.phone ? `<a class="callbtn" href="tel:${h(c.phone)}">${ic('phone')} ${h(c.phone)}</a>` : ''}</div></td>
+          <td>${c.email_ok ? `<span class="chip blue">${ic('mail')}</span> ` : ''}${c.sms_ok ? `<span class="chip green">${ic('sms')}</span>` : ''}${!c.email_ok && !c.sms_ok ? '<span class="chip red">Not delivered</span>' : ''}</td>
+          <td>${c.acked_at ? `<span class="chip green">${ic('check')} Confirmed ${h(ago(c.acked_at))}</span>` : '<span class="chip red"><span class="live"></span>Waiting · call them</span>'}</td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="muted" style="font-weight:600">No critical facilities in these areas.</div>'}
+    </div>
+    <div class="card pad rise">
+      <h3 style="font-size:18px;margin-bottom:14px">Delivery</h3>
+      ${stages.length ? stages.map((s) => `<div style="margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>${names[s.stage] || s.stage}</b>
+        ${s.email_failed + s.sms_failed + s.email_pending + s.sms_pending ? `<button class="btn ghost sm" data-resend="${s.stage}">${ic('refresh')} Retry unsent</button>` : ''}</div>
+        <div class="statgrid"><div><b>${s.total}</b><span>Recipients</span></div><div><b>${s.email_sent}</b><span>Emails sent${s.email_failed ? ` · <span style="color:var(--red)">${s.email_failed} failed</span>` : ''}${s.email_pending ? ` · ${s.email_pending} pending` : ''}</span></div>
+        <div><b>${s.sms_sent}</b><span>SMS sent${s.sms_failed ? ` · <span style="color:var(--red)">${s.sms_failed} failed</span>` : ''}${s.sms_pending ? ` · ${s.sms_pending} pending` : ''}</span></div><div><b>${s.acked}</b><span>Confirmed</span></div></div></div>`).join('') : '<div class="muted" style="font-weight:600">Nobody is subscribed to these areas yet.</div>'}
+    </div>`;
+  $('#bk').onclick = () => { S.staffTab = 'outages'; S.params = {}; history.pushState({ view: 'staff', params: {} }, '', '/#staff'); viewStaff(); };
+  const rs = $('#rs');
+  if (rs) rs.onclick = async () => { if (!(await confirmBox({ title: 'Power back on?', text: `Everyone alerted about “${o.title}” gets a “power restored” message now.`, ok: 'Send restored notice' }))) return;
+    busy(rs, async () => { try { const r = await api('POST', `/staff/outages/${o.id}/restore`, {}); toast(`Restored notice sent to ${r.result.recipients}.`); viewStaff(); } catch (e) { toastErr(e.message); } }); };
+  const cn = $('#cn');
+  if (cn) cn.onclick = async () => { if (!(await confirmBox({ title: 'Cancel this planned cut?', text: 'Everyone alerted gets a message that the cut will not go ahead.', ok: 'Cancel the cut', danger: true }))) return;
+    busy(cn, async () => { try { await api('POST', `/staff/outages/${o.id}/cancel`, {}); toast('Cancellation sent.'); viewStaff(); } catch (e) { toastErr(e.message); } }); };
+  pane.querySelectorAll('[data-resend]').forEach((b) => b.onclick = () => busy(b, async () => {
+    try { const r = await api('POST', `/staff/outages/${o.id}/resend`, { stage: b.dataset.resend }); toast(`Retried: ${r.result.emailSent} email, ${r.result.smsSent} SMS sent.`); viewStaff(); } catch (e) { toastErr(e.message); }
+  }));
+}
+
+async function staffSubscribers(pane) {
+  const isAdmin = S.user.role === 'admin';
+  pane.innerHTML = `<div class="ph"><h2>Subscribers</h2></div>
+    <div class="row" style="margin-bottom:16px"><input class="inp" id="q" placeholder="Search name, facility, email, phone">
+    <select class="inp" id="flt" style="flex:0 0 210px"><option value="">Everyone</option><option value="critical">Critical sites</option><option value="unverified">Critical · to verify</option><option value="staff">Staff</option></select></div>
+    <div class="card rise" style="padding:10px 14px" id="list"><div class="loading"><div class="spin"></div></div></div>`;
+  let t;
+  const load = async () => {
+    const rows = await api('GET', `/staff/subscribers?q=${encodeURIComponent($('#q').value)}&filter=${$('#flt').value}`);
+    $('#list').innerHTML = rows.length ? `<div class="tscroll"><table class="tbl"><thead><tr><th>Subscriber</th><th>Contact</th><th>Areas</th><th>Status</th>${isAdmin ? '<th>Role</th>' : ''}</tr></thead><tbody>
+      ${rows.map((u) => `<tr>
+        <td><b>${h(KINDS[u.kind]?.[0] || '')} ${h(u.org_name || u.name)}</b><div class="muted" style="font-size:12.5px;font-weight:600">${h(KINDS[u.kind]?.[1] || u.kind)}${u.org_name ? ' · ' + h(u.name) : ''}</div></td>
+        <td style="font-size:13.5px;font-weight:600">${h(u.email)}<div style="margin-top:4px">${u.phone ? `<a class="callbtn" href="tel:${h(u.phone)}">${ic('phone')} ${h(u.phone)}</a>` : ''}</div></td>
+        <td style="font-size:13px;max-width:240px;color:var(--ink-2);font-weight:600">${h(u.area_names || '—')}</td>
+        <td>${!u.email_verified ? '<span class="chip grey">Email not confirmed</span>' : u.critical ? (u.critical_verified ? `<span class="chip green">${ic('shield')} Verified</span> <button class="linkbtn" style="font-size:12px;color:var(--muted)" data-vc="${u.id}" data-v="0">undo</button>` : `<button class="btn sm volt" data-vc="${u.id}" data-v="1">${ic('shield')} Verify critical</button>`) : '<span class="chip">Subscriber</span>'}${u.active ? '' : ' <span class="chip red">Disabled</span>'}</td>
+        ${isAdmin ? `<td>${u.id === S.user.id ? '<span class="chip blue">You</span>' : `<select class="inp" style="padding:8px 34px 8px 10px;min-width:130px" data-role="${u.id}">${['subscriber', 'staff', 'admin'].map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>`}</td>` : ''}
+      </tr>`).join('')}</tbody></table></div>` : `<div class="empty"><div class="em" style="background:var(--sky);color:var(--blue)">${ic('search')}</div><b>No matches</b></div>`;
+    $('#list').querySelectorAll('[data-vc]').forEach((b) => b.onclick = () => busy(b, async () => {
+      try { await api('POST', `/staff/subscribers/${b.dataset.vc}/verify-critical`, { verified: b.dataset.v === '1' }); load(); } catch (e) { toastErr(e.message); }
+    }));
+    $('#list').querySelectorAll('[data-role]').forEach((s) => s.onchange = async () => {
+      try { await api('POST', `/admin/users/${s.dataset.role}`, { role: s.value }); toast('Role updated. It applies on their next page load.'); } catch (e) { toastErr(e.message); load(); }
+    });
+  };
+  $('#q').oninput = () => { clearTimeout(t); t = setTimeout(load, 300); };
+  $('#flt').onchange = load;
+  await load();
+}
+
+function staffAreas(pane) {
+  const regions = [...new Set(S.areas.map((a) => a.region))];
+  const byReg = {}; S.areas.forEach((a) => (byReg[a.region] ||= []).push(a));
+  const tones = ['b', 'v', 'g', 'r', 'p'];
+  pane.innerHTML = `<div class="ph"><div><h2>Places</h2><div class="muted" style="font-weight:600">${S.areas.length} places · <span class="chip volt" style="font-size:11.5px">yellow</span> = added by users</div></div></div>
+    <div class="card pad rise" style="margin-bottom:18px"><h3 style="font-size:18px;margin-bottom:14px">Add an area</h3><div id="e"></div>
+      <form id="f" class="row" style="align-items:flex-end">
+        <label class="f" style="margin:0"><span>Area name</span><input class="inp" name="name" required placeholder="e.g. Sinchu Baliya"></label>
+        <label class="f" style="margin:0"><span>Region</span><input class="inp" name="region" list="regs" required><datalist id="regs">${regions.map((r) => `<option value="${h(r)}">`).join('')}</datalist></label>
+        <button class="btn" id="b" style="flex:0 0 auto">${ic('plus')} Add area</button>
+      </form></div>
+    <div class="tiles" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">${Object.entries(byReg).map(([r, l], i) => `<div class="card tile rise">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px"><div class="ic ${tones[i % tones.length]}" style="margin:0;width:44px;height:44px">${ic('pin')}</div><div><h3 style="margin:0">${h(r)}</h3><div class="muted" style="font-weight:700;font-size:13px">${l.length} areas</div></div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${l.map((a) => a.added_by_user
+        ? `<span class="chip volt" title="Added by a user">${h(a.name)} <button class="linkbtn" data-del="${a.id}" style="color:#7A5B00;display:inline-flex" aria-label="Remove">${ic('x')}</button></span>`
+        : `<span class="chip">${h(a.name)}</span>`).join('')}</div></div>`).join('')}</div>`;
+  pane.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+    if (!(await confirmBox({ title: 'Remove this place?', text: 'It disappears from the list. People who picked it stop getting alerts for it.', ok: 'Remove', danger: true }))) return;
+    try { await api('DELETE', '/staff/areas/' + b.dataset.del); S.areas = []; await loadAreas(); toast('Place removed.'); staffAreas(pane); } catch (e) { toastErr(e.message); }
+  });
+  $('#f').onsubmit = (ev) => {
+    ev.preventDefault();
+    busy($('#b'), async () => {
+      try { await api('POST', '/staff/areas', Object.fromEntries(new FormData(ev.target))); S.areas = []; await loadAreas(); toast('Place added. People can pick it now.'); staffAreas(pane); }
+      catch (e) { showErr($('#e'), e.message); }
+    });
+  };
+}
+
+/* ============ Boot ============ */
+LOGO_OK = true;
+(async function boot() {
+  const qs = new URLSearchParams(location.search);
+  if (store.get('na_token')) { try { S.user = await api('GET', '/me'); } catch { S.user = null; } }
+  if (qs.get('ack')) { S.view = 'ack'; S.params = { token: qs.get('ack') }; history.replaceState({ view: 'ack', params: S.params }, '', '/'); }
+  else { const p = parseHash(); S.view = p.view; S.params = p.params; history.replaceState(p, '', location.href); }
+  render();
+})();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+</script>
+</body>
+</html>
