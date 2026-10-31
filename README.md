@@ -1,11 +1,22 @@
 # NAWEC Alerts
 
-Power outage alerts by email (Brevo) and SMS, sent by location. Hospitals and other critical sites are alerted first and must confirm.
+Power outage alerts by free phone push notifications, email (Brevo) and SMS, sent by location. Hospitals and other critical sites are alerted first and must confirm.
 
 ## What it does
 
 - **Public page:** shows current and upcoming outages, with a filter by area.
-- **Sign up:** people choose their type (hospital, clinic, home, and so on) and their places, and they're in straight away with no code. They stay signed in on that device, and a welcome email confirms their alerts are on. Only admin emails confirm with a code.
+- **Sign up (no password):** people choose their type (hospital, clinic, home, and so on) and their places, then confirm their email with a 6-digit code. Alerts only start after the email is confirmed, so nobody can sign up someone else's inbox. A welcome email confirms their alerts are on.
+- **Sign in (no password):** enter your email and we send a code. People stay signed in on that device.
+- **Alerts for everywhere:** people can tick "Alert me about every outage, everywhere". They get an email for every outage in any area. SMS, the hospital "I received this" button and reminders still only apply to their own places, and a hospital outside the affected area never blocks a short-notice planned cut.
+- **Phone alerts (web push, free):** the main alert. People tap **Turn on phone alerts** on their dashboard or in Your details.
+  - Android: works in Chrome, installed or not.
+  - iPhone/iPad (iOS 16.4+): only after **Share → Add to Home Screen**, then opening the app from the Home Screen. The dashboard shows these steps on iPhone.
+  - Same rules as email: their own places, plus every outage if they ticked "everywhere".
+  - **Email is the backup.** If a phone shows the alert, no email is sent. If a person has no phone set up, or the push fails, the email goes at once. If the phone doesn't confirm it showed the alert within 5 minutes (`PUSH_GRACE_MINUTES`), the email is sent then.
+  - Hospitals and critical sites always get email and SMS too, as before. Anyone can tick "Email me every alert too".
+  - Signing out removes that phone, so the next person doesn't get the alerts.
+- **Unsubscribe:** every alert email has a one-click unsubscribe link. People can turn alerts back on from that page, from their dashboard, or by saving their details.
+- **Staff and admins** sign in with a password ("Staff sign in" on the sign-in page). To set it the first time, use "Set or reset password".
 - **Places:** 271 towns, villages and neighbourhoods across all 7 regions (`netlify/lib/places.mjs`). If a place is missing, anyone can add it, and staff can remove wrong ones in Staff portal → Places.
 - **Staff portal:** staff post a planned cut or an emergency, choose the areas, see who will be alerted, and send.
 - **Hospital protection:**
@@ -20,11 +31,12 @@ Power outage alerts by email (Brevo) and SMS, sent by location. Hospitals and ot
 ```
 index.html                    whole frontend (public, subscriber, staff)
 netlify/functions/api.mjs     API at /api/*
-netlify/functions/reminders.mjs  runs every 10 min (reminders, retries)
-netlify/lib/core.mjs          database, auth, Brevo email, SMS, sending
+netlify/functions/reminders.mjs  runs every 5 min (reminders, retries, backup emails)
+netlify/lib/core.mjs          database, auth, web push, Brevo email, SMS, sending
 netlify/lib/places.mjs       every place, by region
 nawec-logo.png                official NAWEC logo (add this file yourself)
-manifest.json, sw.js, icon.svg
+manifest.json, icon.svg
+sw.js                         offline cache + shows push alerts
 ```
 
 The database tables are created automatically on the first request, and the areas are pre-filled. Staff can add more areas in the portal.
@@ -46,9 +58,11 @@ The database tables are created automatically on the first request, and the area
 | `BREVO_SMS_SENDER` | Needed if you use Brevo SMS. Up to 11 characters, for example `NAWEC`. |
 | `MIN_NOTICE_HOURS` | `2` |
 | `SITE_URL` | `https://nawec-alerts.netlify.app` |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Optional. Push keys are made automatically and kept in the database. Only set these to use your own (`npx web-push generate-vapid-keys`). |
+| `PUSH_GRACE_MINUTES` | Optional, default `5`. How long email waits for the phone. |
 
-4. Deploy, then sign up with your admin email. You land in the staff portal.
-5. To make someone staff: go to Staff portal → Subscribers and change their role.
+4. Deploy, then sign up with your admin email and confirm the code. Then go to Sign in → Staff sign in → "Set or reset password" to set your admin password.
+5. To make someone staff: go to Staff portal → Subscribers and change their role. They then set their password the same way.
 
 ## NAWEC logo
 
@@ -56,6 +70,6 @@ Put the official logo in the project root as `nawec-logo.png` (a square PNG work
 
 ## Notes
 
-- **Brevo limit:** the free plan sends 300 emails a day. Each person counts as one email, so a large area needs a paid Brevo plan.
+- **Brevo limit:** the free plan sends 300 emails a day. Phone alerts are free and unlimited, and people whose phone shows the alert don't use an email, so the more people turn on phone alerts, the further the free plan goes.
 - **SMS:** critical sites always get SMS. Other people get it only if they turned it on. httpSMS sends from one phone, so it is fine for hospitals but slow for thousands of people. Use Brevo SMS or another bulk provider for big areas.
-- **Retries:** if sending runs out of time or fails, the reminders function retries every 10 minutes. Staff can also press **Retry unsent**.
+- **Retries:** if sending runs out of time or fails, the reminders function retries every 5 minutes. Staff can also press **Retry unsent**.

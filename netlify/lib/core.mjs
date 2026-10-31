@@ -1,6 +1,7 @@
 // Shared helpers: database, auth, email (Brevo), SMS, dispatch.
 import { neon } from '@neondatabase/serverless';
 import crypto from 'node:crypto';
+import { generateVAPIDKeys, sendNotification } from './webpush.mjs';
 import { PLACES, PLACE_COUNT } from './places.mjs';
 
 /* ---------------- Database ---------------- */
@@ -15,7 +16,9 @@ export function db() {
 }
 // q('select ... where id = $1', [id]) -> rows
 export async function q(text, params = []) {
-  return db().query(text, params);
+  // Works with every version of the Neon driver (older ones use sql(text, params)).
+  const sql = db();
+  return typeof sql.query === 'function' ? sql.query(text, params) : sql(text, params);
 }
 
 const SCHEMA = [
@@ -109,6 +112,33 @@ export async function ensureSchema() {
   for (const st of SCHEMA) await q(st);
   await q(`ALTER TABLE areas ADD COLUMN IF NOT EXISTS added_by_user BOOLEAN NOT NULL DEFAULT false`);
   await q(`ALTER TABLE areas ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()`);
+  // No passwords for subscribers: they confirm their email and sign in with an emailed code.
+  await q(`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`);
+  await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscribed BOOLEAN NOT NULL DEFAULT true`);
+  await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS unsub_token TEXT UNIQUE`);
+  // "Alert me everywhere": email for every outage, not just the user's own places.
+  await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_all BOOLEAN NOT NULL DEFAULT false`);
+  // Web push: free alerts to phones (Android + iPhone installed app). Email becomes the backup.
+  await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_too BOOLEAN NOT NULL DEFAULT false`);
+  await q(`CREATE TABLE IF NOT EXISTS push_subs (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT UNIQUE NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    device TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_ok_at TIMESTAMPTZ,
+    fails INT NOT NULL DEFAULT 0
+  )`);
+  await q(`CREATE INDEX IF NOT EXISTS push_subs_user_idx ON push_subs(user_id)`);
+  await q(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+  // Alerts sent before push existed get 'old' so they are never pushed late; new ones start 'pending'.
+  await q(`ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS push_status TEXT NOT NULL DEFAULT 'old'`);
+  await q(`ALTER TABLE deliveries ALTER COLUMN push_status SET DEFAULT 'pending'`);
+  await q(`ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS push_sent_at TIMESTAMPTZ`);
+  await q(`ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS push_seen_at TIMESTAMPTZ`);
+  await q(`UPDATE users SET unsub_token = replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '') WHERE unsub_token IS NULL`);
   // Load every place in one query; new places in places.mjs are picked up automatically.
   const [{ n }] = await q('SELECT count(*)::int AS n FROM areas WHERE NOT added_by_user');
   if (n < PLACE_COUNT) {
@@ -167,7 +197,8 @@ export function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, phone: u.phone, org_name: u.org_name, kind: u.kind,
     role: u.role, critical: u.critical, critical_verified: u.critical_verified,
-    sms_opt_in: u.sms_opt_in, email_verified: u.email_verified, created_at: u.created_at,
+    sms_opt_in: u.sms_opt_in, email_verified: u.email_verified, subscribed: u.subscribed !== false, alert_all: !!u.alert_all,
+    email_too: !!u.email_too, created_at: u.created_at,
   };
 }
 
@@ -200,7 +231,13 @@ export function siteUrl() {
 /* ---------------- Email (Brevo) ---------------- */
 const BRAND = () => process.env.BREVO_SENDER_NAME || 'NAWEC Alerts';
 
-export function emailShell({ heading, accent = '#2B59FF', bodyHtml }) {
+const host = () => siteUrl().replace(/^https?:\/\//, '');
+// Footer for alert emails; unsubUrl may be a Brevo placeholder like {{params.unsub_url}}.
+export const alertFooter = (unsubUrl) => `You get this because you subscribed to outage alerts for your area.
+  <a href="${siteUrl()}/#login" style="color:#2B59FF">Change your areas</a> &middot; <a href="${unsubUrl}" style="color:#6b7690">Unsubscribe</a>`;
+const codeFooter = () => `You got this because this email was entered at <a href="${siteUrl()}" style="color:#2B59FF">${host()}</a>.`;
+
+export function emailShell({ heading, accent = '#2B59FF', bodyHtml, footer }) {
   return `<!doctype html><html><body style="margin:0;background:#f2f4f8;font-family:Arial,Helvetica,sans-serif;color:#13203a">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f8;padding:24px 12px">
 <tr><td align="center">
@@ -211,8 +248,7 @@ export function emailShell({ heading, accent = '#2B59FF', bodyHtml }) {
 </td></tr>
 <tr><td style="padding:22px 24px;font-size:15px;line-height:1.55">${bodyHtml}</td></tr>
 <tr><td style="padding:14px 24px;border-top:1px solid #eef1f6;font-size:12px;color:#6b7690">
-  You get this because you subscribed to outage alerts for your area.
-  Manage your areas at <a href="${siteUrl()}" style="color:#2B59FF">${siteUrl().replace(/^https?:\/\//, '')}</a>.
+  ${footer || alertFooter(siteUrl())}
 </td></tr>
 </table></td></tr></table></body></html>`;
 }
@@ -236,9 +272,9 @@ export async function sendBrevoBatch({ subject, html, messages }) {
 }
 
 export async function sendCodeEmail(email, code, purpose) {
-  const what = purpose === 'reset' ? 'reset your password' : 'confirm your email';
+  const what = { reset: 'set your staff password', login: 'sign in' }[purpose] || 'confirm your email and turn on your alerts';
   const html = emailShell({
-    heading: 'Your code',
+    heading: 'Your code', footer: codeFooter(),
     bodyHtml: `<p>Use this code to ${what}:</p>
 <div style="font-size:34px;font-weight:bold;letter-spacing:8px;background:#f2f4f8;border-radius:10px;padding:16px;text-align:center">${code}</div>
 <p style="color:#6b7690;font-size:13px">It expires in 15 minutes. If you didn't ask for it, ignore this email.</p>`,
@@ -249,10 +285,11 @@ export async function sendCodeEmail(email, code, purpose) {
 export async function sendWelcomeEmail(user, areaNames) {
   const crit = user.critical;
   const html = emailShell({
-    heading: 'Alerts are on',
+    heading: 'Alerts are on', footer: alertFooter(`${siteUrl()}/?unsub=${user.unsub_token}`),
     bodyHtml: `<p>Hello ${esc(user.name || 'there')},</p>
-<p>You'll now get power outage alerts for:</p>
-<p style="font-weight:bold">${esc(areaNames.join(', '))}</p>
+${areaNames.length ? `<p>You'll now get power outage alerts for:</p>
+<p style="font-weight:bold">${esc(areaNames.join(', '))}</p>` : ''}
+${user.alert_all ? `<p>${areaNames.length ? 'You also chose' : 'You chose'} <b>alerts for everywhere</b>, so we'll email you about every outage${areaNames.length ? '. SMS and urgent alerts are only for your own places' : ''}.</p>` : ''}
 ${crit ? `<p style="background:#fff5f5;border-left:4px solid #E0213F;padding:10px 14px;border-radius:6px">${esc(user.org_name || 'Your facility')} is registered as a <b>critical facility</b>. You'll be alerted first, by email and SMS, and asked to confirm each warning.</p>` : ''}
 <p><a href="${siteUrl()}" style="display:inline-block;background:#2B59FF;color:#fff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:10px">Open NAWEC Alerts</a></p>`,
   });
@@ -290,7 +327,56 @@ export async function sendSms(to, content) {
   }
 }
 
+/* ---------------- Web push ---------------- */
+// VAPID keys: taken from env if set, otherwise made once and kept in the database (no setup needed).
+let _vapid;
+export async function vapidKeys() {
+  if (_vapid) return _vapid;
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    _vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY };
+  } else {
+    const k = await generateVAPIDKeys();
+    await q(`INSERT INTO settings (key, value) VALUES ('vapid', $1) ON CONFLICT (key) DO NOTHING`, [JSON.stringify(k)]);
+    const [row] = await q(`SELECT value FROM settings WHERE key='vapid'`);
+    _vapid = JSON.parse(row.value);
+  }
+  // Apple needs a real mailto: or https: contact here.
+  _vapid.subject = process.env.VAPID_SUBJECT || `mailto:${adminEmails()[0] || process.env.BREVO_SENDER_EMAIL || 'alerts@nawec.gm'}`;
+  return _vapid;
+}
+
+// Sends one notification to every device of a user. Returns { sent, failed, devices }.
+export async function pushToUser(userId, payload, { urgent = false } = {}) {
+  const vapid = await vapidKeys();
+  const subs = await q(`SELECT id, endpoint, p256dh, auth FROM push_subs WHERE user_id=$1`, [userId]);
+  let sent = 0, failed = 0;
+  const body = JSON.stringify(payload);
+  await Promise.all(subs.map(async (s) => {
+    try {
+      await sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body, vapid,
+        { TTL: 6 * 3600, urgency: urgent ? 'high' : 'normal', topic: payload.tag ? String(payload.tag).replace(/[^\w-]/g, '').slice(0, 32) : undefined });
+      sent++;
+      await q(`UPDATE push_subs SET last_ok_at=now(), fails=0 WHERE id=$1`, [s.id]);
+    } catch (e) {
+      failed++;
+      // 404/410: the phone removed the app or turned notifications off — forget this device.
+      if (e.statusCode === 404 || e.statusCode === 410 || e.statusCode === 403) await q(`DELETE FROM push_subs WHERE id=$1`, [s.id]);
+      else await q(`UPDATE push_subs SET fails=fails+1 WHERE id=$1`, [s.id]);
+      console.error('push', e.statusCode, String(e.body || e.message).slice(0, 200));
+    }
+  }));
+  return { sent, failed, devices: subs.length };
+}
+
+// How long email waits for the phone to confirm it showed the push before sending the backup email.
+export const PUSH_GRACE_MIN = Number(process.env.PUSH_GRACE_MINUTES || 5);
+
 /* ---------------- Outage dispatch ---------------- */
+// SQL: is user `u` in one of the areas of the outage on delivery `d`?
+// Hospital rules (confirm button, forced SMS, reminders) only apply in the user's own places.
+export const inArea = (u = 'u', d = 'd') =>
+  `EXISTS (SELECT 1 FROM user_areas iua JOIN outage_areas ioa ON ioa.area_id = iua.area_id WHERE iua.user_id = ${u}.id AND ioa.outage_id = ${d}.outage_id)`;
+
 export async function outageWithAreas(id) {
   const [o] = await q('SELECT * FROM outages WHERE id = $1', [id]);
   if (!o) return null;
@@ -357,8 +443,8 @@ function buildEmailHtml(o, c) {
   const msg = o.message ? `<p style="background:#f6f8fb;border-left:4px solid ${c.accent};padding:10px 14px;border-radius:6px;white-space:pre-line">${esc(o.message)}</p>` : '';
   // {{params.*}} are filled per recipient by Brevo.
   return emailShell({
-    heading: c.heading, accent: c.accent,
-    bodyHtml: `<p>Hello {{params.name}},</p><p>${c.lead}</p>
+    heading: c.heading, accent: c.accent, footer: alertFooter('{{params.unsub_url}}'),
+    bodyHtml: `<p>Hello {{params.name}},</p><p>${c.lead}</p>{{params.why}}
 <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:15px;margin:8px 0 14px">${rows}</table>
 ${msg}
 {{params.critical_block}}
@@ -386,8 +472,10 @@ export async function dispatch(outageId, stage, { criticalOnly = false, deadline
 
   // 1. create delivery rows for everyone in the affected areas
   const recips = await q(
-    `SELECT DISTINCT u.id FROM users u JOIN user_areas ua ON ua.user_id = u.id
-     WHERE ua.area_id = ANY($1::int[]) AND u.active AND u.email_verified ${criticalOnly ? 'AND u.critical' : ''}`,
+    `SELECT u.id FROM users u
+     WHERE u.active AND u.email_verified AND u.subscribed AND (
+       EXISTS (SELECT 1 FROM user_areas ua WHERE ua.user_id = u.id AND ua.area_id = ANY($1::int[]))
+       ${criticalOnly ? 'AND u.critical' : 'OR u.alert_all'})`,
     [areaIds]);
   if (recips.length) {
     await q(`INSERT INTO deliveries (outage_id, user_id, stage, ack_token)
@@ -400,11 +488,49 @@ export async function dispatch(outageId, stage, { criticalOnly = false, deadline
   const html = buildEmailHtml(o, c);
   const base = siteUrl();
 
-  // 2. emails, critical facilities first, batched
+  // 2. web push first (free, instant). Same people as email: own places + "everywhere".
+  const pendingPush = await q(
+    `SELECT d.id, d.user_id, d.ack_token, u.critical, u.email_too, ${inArea()} AS in_area
+     FROM deliveries d JOIN users u ON u.id = d.user_id
+     WHERE d.outage_id = $1 AND d.stage = $2 AND d.push_status = 'pending' AND u.subscribed
+     ORDER BY (u.critical AND ${inArea()}) DESC, d.id`, [outageId, stage]);
+  let pushSent = 0, pushFailed = 0;
+  const areasShort = areaLabel(o.areas, 3);
+  const when = o.ends_at ? `${fmtTime(o.starts_at)} – ${fmtTime(o.ends_at)}` : `From ${fmtTime(o.starts_at)}`;
+  for (let i = 0; i < pendingPush.length; i += 20) {
+    if (Date.now() > deadline) break;
+    await Promise.all(pendingPush.slice(i, i + 20).map(async (d) => {
+      const crit = d.critical && d.in_area && stage !== 'restored' && stage !== 'cancelled';
+      const r = await pushToUser(d.user_id, {
+        title: c.heading + ' · ' + areasShort,
+        body: (stage === 'restored' || stage === 'cancelled' ? o.title : `${when}. ${o.title}`) + (crit ? ' — Tap to confirm you received this.' : '') + (d.in_area ? '' : ' (Outside your places)'),
+        tag: `o${o.id}-${stage}`,
+        url: '/#dashboard',
+        r: d.ack_token, // lets the phone report "shown", so the backup email isn't needed
+        urgent: crit || o.kind === 'emergency',
+      }, { urgent: crit || o.kind === 'emergency' || stage === 'reminder' });
+      // 'none' = no phone set up; email covers it straight away.
+      const st = r.sent ? 'sent' : r.devices ? 'failed' : 'none';
+      if (r.sent) pushSent++; else if (r.devices) pushFailed++;
+      await q(`UPDATE deliveries SET push_status=$2, push_sent_at = CASE WHEN $2='sent' THEN COALESCE(push_sent_at, now()) ELSE push_sent_at END,
+                 sent_at = CASE WHEN $2='sent' THEN COALESCE(sent_at, now()) ELSE sent_at END WHERE id=$1`, [d.id, st]);
+      // Email is the backup: hold it if the push went out, unless this is a hospital/critical site or the user wants both.
+      if (r.sent && !(d.critical && d.in_area) && !d.email_too) {
+        await q(`UPDATE deliveries SET email_status='held' WHERE id=$1 AND email_status='pending'`, [d.id]);
+      }
+    }));
+  }
+  // Phone showed the push: no backup email needed.
+  await q(`UPDATE deliveries SET email_status='not_needed' WHERE outage_id=$1 AND stage=$2 AND email_status='held' AND push_seen_at IS NOT NULL`, [outageId, stage]);
+
+  // 3. emails (backup), critical facilities first, batched.
+  // Held emails go out if the phone hasn't confirmed the push within PUSH_GRACE_MIN minutes.
   const pendingEmail = await q(
-    `SELECT d.id, d.ack_token, u.email, u.name, u.org_name, u.critical FROM deliveries d JOIN users u ON u.id = d.user_id
-     WHERE d.outage_id = $1 AND d.stage = $2 AND d.email_status IN ('pending','failed')
-     ORDER BY u.critical DESC, d.id`, [outageId, stage]);
+    `SELECT d.id, d.ack_token, u.email, u.name, u.org_name, u.critical, u.unsub_token, ${inArea()} AS in_area
+     FROM deliveries d JOIN users u ON u.id = d.user_id
+     WHERE d.outage_id = $1 AND d.stage = $2 AND u.subscribed AND (d.email_status IN ('pending','failed')
+       OR (d.email_status='held' AND d.push_seen_at IS NULL AND d.push_sent_at < now() - make_interval(mins => $3::int)))
+     ORDER BY (u.critical AND ${inArea()}) DESC, d.id`, [outageId, stage, PUSH_GRACE_MIN]);
   let emailSent = 0, emailFailed = 0;
   for (let i = 0; i < pendingEmail.length; i += 90) {
     if (Date.now() > deadline) break;
@@ -416,7 +542,9 @@ export async function dispatch(outageId, stage, { criticalOnly = false, deadline
         params: {
           name: esc(d.name || d.org_name || 'there'),
           view_url: base,
-          critical_block: d.critical ? criticalBlock(`${base}/?ack=${d.ack_token}`, stage) : '',
+          why: d.in_area ? '' : '<p style="color:#6b7690;font-size:13px">This is not in your places. You get it because you chose alerts for everywhere.</p>',
+          critical_block: d.critical && d.in_area ? criticalBlock(`${base}/?ack=${d.ack_token}`, stage) : '',
+          unsub_url: `${base}/?unsub=${d.unsub_token}`,
         },
       })),
     });
@@ -430,17 +558,18 @@ export async function dispatch(outageId, stage, { criticalOnly = false, deadline
     }
   }
 
-  // 3. SMS: critical facilities always, others if they opted in
+  // 4. SMS: critical facilities always, others if they opted in
   const pendingSms = await q(
-    `SELECT d.id, d.ack_token, u.phone, u.critical, u.sms_opt_in FROM deliveries d JOIN users u ON u.id = d.user_id
-     WHERE d.outage_id = $1 AND d.stage = $2 AND d.sms_status IN ('pending','failed')
+    `SELECT d.id, d.ack_token, u.phone, u.critical, u.sms_opt_in, ${inArea()} AS in_area FROM deliveries d JOIN users u ON u.id = d.user_id
+     WHERE d.outage_id = $1 AND d.stage = $2 AND d.sms_status IN ('pending','failed') AND u.subscribed
      ORDER BY u.critical DESC, d.id`, [outageId, stage]);
   let smsSent = 0, smsFailed = 0, smsSkipped = 0;
   const smsOn = !!process.env.SMS_PROVIDER;
   const smsWanted = [], skipIds = [];
   for (const d of pendingSms) {
     const phone = normPhone(d.phone);
-    if (!smsOn || !phone || !(d.critical || d.sms_opt_in)) skipIds.push(d.id);
+    // SMS only for the user's own places; "everywhere" alerts go by email only.
+    if (!smsOn || !phone || !d.in_area || !(d.critical || d.sms_opt_in)) skipIds.push(d.id);
     else smsWanted.push({ ...d, phone });
   }
   if (skipIds.length) {
@@ -463,7 +592,7 @@ export async function dispatch(outageId, stage, { criticalOnly = false, deadline
   const [{ left }] = await q(
     `SELECT count(*)::int AS left FROM deliveries WHERE outage_id=$1 AND stage=$2 AND (email_status='pending' OR sms_status='pending')`,
     [outageId, stage]);
-  return { recipients: recips.length, emailSent, emailFailed, smsSent, smsFailed, smsSkipped, stillPending: left };
+  return { recipients: recips.length, pushSent, pushFailed, emailSent, emailFailed, smsSent, smsFailed, smsSkipped, stillPending: left };
 }
 
 export async function audit(userId, action, detail) {

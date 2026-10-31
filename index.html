@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NAWEC Alerts — Know before the power goes off</title>
-<meta name="description" content="Live power outage alerts by email and SMS for your area. Hospitals and clinics are warned first.">
+<meta name="description" content="Live power outage alerts on your phone, by email and SMS for your area. Hospitals and clinics are warned first.">
 <meta name="theme-color" content="#0070A8">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/nawec-icon.png" type="image/png">
@@ -260,6 +260,7 @@ section.s{padding:40px 0}
 .avatar{width:48px;height:48px;border-radius:12px;background:var(--river);color:#fff;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:19px;flex:none}
 .me h1{font-size:22px}
 .me .ways{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.me .ways .way.wide{grid-column:1/-1}
 .way{background:var(--paper);border-radius:var(--r-s);padding:10px 12px;display:flex;gap:10px;align-items:center;min-width:0}
 .way svg{color:var(--river)}
 .way div{min-width:0} .way b{display:block;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .way small{color:var(--muted)}
@@ -319,7 +320,11 @@ section.s{padding:40px 0}
 .bar{height:6px;background:var(--soft);border-radius:99px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--bank);border-radius:99px}
 .bar i.part{background:#D9A33A}
-.statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.pushbox{border-radius:var(--r);padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:var(--river-soft);border:1px solid rgba(43,89,255,.18)}
+.pushbox .ic{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--blue,#2B59FF);color:#fff;flex:0 0 auto}
+.pushbox .t{flex:1;min-width:200px}.pushbox b{font-size:16px}.pushbox p{margin:2px 0 0;font-size:14px;font-weight:600;color:var(--ink-2)}
+.pushbox ol{margin:8px 0 0;padding-left:20px;font-size:14px;font-weight:600;color:var(--ink-2)}.pushbox ol li{margin:3px 0}
 .statgrid div{background:var(--paper);border-radius:var(--r-s);padding:10px 12px}
 .statgrid b{display:block;font-family:var(--display);font-size:22px}
 .statgrid span{font-size:12.5px;color:var(--muted)}
@@ -435,7 +440,7 @@ footer{padding:28px 0 36px;color:var(--muted);font-size:13.5px;border-top:1px so
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <main id="app"></main>
 <nav class="tabbar" id="tabbar"></nav>
-<footer id="foot"><div class="wrap" style="display:flex;gap:12px;align-items:center"><img src="/nawec-logo.png" alt="NAWEC" style="height:28px"> NAWEC Alerts · Outage warnings by email and SMS</div></footer>
+<footer id="foot"><div class="wrap" style="display:flex;gap:12px;align-items:center"><img src="/nawec-logo.png" alt="NAWEC" style="height:28px"> NAWEC Alerts · Outage warnings on your phone, by email and SMS</div></footer>
 
 <script>
 /* ============ Icons ============ */
@@ -520,6 +525,66 @@ async function busy(btn, fn) {
   const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = old; }
 }
+/* ============ Phone alerts (web push) ============ */
+// Android: works in Chrome, installed or not. iPhone/iPad: only after "Add to Home Screen" (iOS 16.4+).
+const PUSH = {
+  ios: () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+  installed: () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true,
+  supported: () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
+  async reg() { return Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error('Phone alerts are not ready yet. Reload the page and try again.')), 8000))]); },
+  async sub() { if (!PUSH.supported()) return null; try { return await (await PUSH.reg()).pushManager.getSubscription(); } catch { return null; } },
+  // 'on' | 'off' | 'blocked' | 'install' (iPhone, not added to Home Screen yet) | 'unsupported'
+  async state() {
+    if (PUSH.ios() && !PUSH.installed()) return 'install';
+    if (!PUSH.supported()) return 'unsupported';
+    if (Notification.permission === 'denied') return 'blocked';
+    return Notification.permission === 'granted' && (await PUSH.sub()) ? 'on' : 'off';
+  },
+  key(b64) { const p = '='.repeat((4 - b64.length % 4) % 4); const raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); },
+  async save(sub) { return api('POST', '/push/subscribe', { subscription: sub.toJSON(), device: (PUSH.ios() ? 'iPhone' : /android/i.test(navigator.userAgent) ? 'Android' : 'Browser') + (PUSH.installed() ? ' app' : '') }); },
+  // Must run straight from a tap (iPhone requires it).
+  async enable() {
+    if (!PUSH.supported()) throw new Error('This browser can\'t show phone alerts. Use Chrome on Android, or add this app to your iPhone Home Screen.');
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked. Allow them in your phone settings for this app, then try again.' : 'Allow notifications to get phone alerts.');
+    const reg = await PUSH.reg();
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) { const { key } = await api('GET', '/push/key'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: PUSH.key(key) }); }
+    return PUSH.save(sub);
+  },
+  async disable() {
+    const sub = await PUSH.sub(); if (!sub) return;
+    try { await api('POST', '/push/unsubscribe', { endpoint: sub.endpoint }); } catch {}
+    try { await sub.unsubscribe(); } catch {}
+  },
+  // On every app open: make sure the server still has this phone (keys can change).
+  async sync() { try { if (S.user && PUSH.supported() && Notification.permission === 'granted') { const sub = await PUSH.sub(); if (sub) await PUSH.save(sub); } } catch {} },
+};
+async function signOut() {
+  await PUSH.disable(); // so the next person on this phone doesn't get these alerts
+  try { await api('POST', '/auth/logout'); } catch {}
+  store.set('na_token', null); S.user = null; go('home'); toast('Signed out.', 'info');
+}
+// The box on the dashboard that gets people onto phone alerts.
+function pushBox(state) {
+  if (state === 'on' || state === 'unsupported') return '';
+  if (state === 'install') return `<div class="pushbox rise"><div class="ic">${ic('bell')}</div><div class="t"><b>Get alerts on this iPhone</b><p>Add NAWEC Alerts to your Home Screen first:</p>
+    <ol><li>Tap the <b>Share</b> button in Safari (the square with an arrow).</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open NAWEC Alerts from your Home Screen and tap <b>Turn on phone alerts</b>.</li></ol></div></div>`;
+  if (state === 'blocked') return `<div class="pushbox rise"><div class="ic">${ic('bell')}</div><div class="t"><b>Phone alerts are blocked</b><p>Allow notifications for this app in your phone or browser settings, then reload. Until then we'll email you.</p></div></div>`;
+  return `<div class="pushbox rise"><div class="ic">${ic('bell')}</div><div class="t"><b>Get alerts on this phone, instantly</b><p>Free and faster than email. We'll still email you if your phone misses an alert.</p></div><button class="btn" id="pushOn">${ic('bell')} Turn on phone alerts</button></div>`;
+}
+function bindPush(after) {
+  const b = $('#pushOn');
+  if (b) b.onclick = () => busy(b, async () => {
+    try { await PUSH.enable(); toast('Phone alerts are on.'); try { await api('POST', '/push/test'); } catch {} after(); }
+    catch (e) { toastErr(e.message); after(); }
+  });
+  const t = $('#pushTest');
+  if (t) t.onclick = () => busy(t, async () => { try { await api('POST', '/push/test'); toast('Test alert sent to your phone.', 'info'); } catch (e) { toastErr(e.message); } });
+  const off = $('#pushOff');
+  if (off) off.onclick = () => busy(off, async () => { await PUSH.disable(); toast('Phone alerts are off on this device. We\'ll email you.', 'info'); after(); });
+}
+
 const showErr = (el, msg) => { if (el) el.innerHTML = msg ? `<div class="err">${h(msg)}</div>` : ''; if (msg) toastErr(msg); };
 
 const KINDS = {
@@ -571,7 +636,7 @@ function renderNav() {
     <button class="navlink ${on('home')}" data-go="home">${ic('home')} Outages</button>
     <button class="navlink ${on('login')}" data-go="login">Sign in</button>
     <button class="btn sm" data-go="register">${ic('bolt')} Get alerts</button>`;
-  const lo = $('#logout'); if (lo) lo.onclick = async () => { try { await api('POST', '/auth/logout'); } catch {} store.set('na_token', null); S.user = null; go('home'); toast('Signed out.', 'info'); };
+  const lo = $('#logout'); if (lo) lo.onclick = signOut;
   // mobile tab bar
   const tb = $('#tabbar');
   const tab = (view, icon, label, extra = '') => `<button class="${v === view ? 'on' : ''}" data-go="${view}">${ic(icon)}${label}${extra}</button>`;
@@ -589,7 +654,7 @@ function render() {
   if (['dashboard', 'profile', 'staff'].includes(v) && !S.user) return go('login');
   if (v === 'staff' && !isStaff()) return go('dashboard');
   if (['login', 'register'].includes(v) && S.user) return go(isStaff() ? 'staff' : 'dashboard');
-  ({ home: viewHome, login: viewLogin, register: viewRegister, verify: viewVerify, forgot: viewForgot, ack: viewAck,
+  ({ home: viewHome, login: viewLogin, register: viewRegister, verify: viewVerify, forgot: viewForgot, ack: viewAck, unsub: viewUnsub,
      dashboard: viewDashboard, profile: viewProfile, staff: viewStaff }[v] || viewHome)();
 }
 const app = () => $('#app');
@@ -827,7 +892,8 @@ const AUTH_SIDE = {
   login: ['Know before the power goes off.', 'Sign in once. Your outage alerts stay right here.'],
   register: ['Never be caught by a power cut again.', 'Pick your places. We warn you before the power goes, and tell you when it is back.'],
   verify: ['Almost there.', 'Confirm your email and your alerts are on.'],
-  forgot: ['Locked out?', 'We will email you a code to set a new password.'],
+  forgot: ['Staff access.', 'We will email you a code to set your staff password.'],
+  unsub: ['Your choice.', 'You can turn alerts back on any time.'],
   ack: ['Thank you.', 'Your confirmation helps NAWEC keep patients safe.'],
 };
 function authShell(inner) {
@@ -835,35 +901,56 @@ function authShell(inner) {
   app().innerHTML = `<div class="authsplit">
     <aside class="authside"><span class="alogo"><img src="/nawec-logo.png" alt="NAWEC"></span>
       <h2>${t}</h2><p>${sub}</p>
-      <span class="apill"><span class="live"></span> Live outage alerts · email &amp; SMS</span>
+      <span class="apill"><span class="live"></span> Live alerts · phone, email &amp; SMS</span>
       <div class="afoot">Hospitals and clinics are always warned first.</div></aside>
     <div class="authmain"><div class="auth rise">${inner}</div></div></div>`;
 }
 
 function viewLogin() {
-  authShell(`
-    <h1>Welcome back</h1><p class="sub">Sign in to see your alerts.</p>
-    <div id="e"></div>
-    <form id="f">
-      <label class="f"><span>Email</span><input class="inp" name="email" type="email" autocomplete="email" required></label>
-      <label class="f"><span>Password</span><input class="inp" name="password" type="password" autocomplete="current-password" required></label>
-      <button class="btn block" id="b">Sign in</button>
-    </form>
-    <p style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:18px 0 0;font-size:14px;font-weight:600">
-      <button class="linkbtn" data-go="forgot">Forgot password?</button>
-      <span>New here? <button class="linkbtn" data-go="register">Create an account</button></span>
-    </p>`);
-  $('#f').onsubmit = (ev) => {
-    ev.preventDefault();
-    const fd = Object.fromEntries(new FormData(ev.target));
-    busy($('#b'), async () => {
-      try {
-        const r = await api('POST', '/auth/login', fd);
-        if (r.need_verify) return go('verify', { email: r.email });
-        signedIn(r);
-      } catch (e) { showErr($('#e'), e.message); }
-    });
+  let email = '', mode = S.params.staff ? 'password' : 'email';
+  const draw = () => {
+    authShell(`
+      <h1>${mode === 'password' ? 'Staff sign in' : 'Welcome back'}</h1>
+      <p class="sub">${mode === 'code' ? `We sent a 6-digit code to <b style="color:var(--ink)">${h(email)}</b>` : mode === 'password' ? 'For NAWEC staff and admins.' : 'No password needed. We\'ll email you a code.'}</p>
+      <div id="e"></div>
+      <form id="f">
+        ${mode === 'code'
+          ? `<input class="inp codeinp" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required autofocus>`
+          : `<label class="f"><span>Email</span><input class="inp" name="email" type="email" value="${h(email)}" autocomplete="email" required></label>`}
+        ${mode === 'password' ? `<label class="f"><span>Password</span><input class="inp" name="password" type="password" autocomplete="current-password" required></label>` : ''}
+        <button class="btn block" id="b" ${mode === 'code' ? 'style="margin-top:16px"' : ''}>${mode === 'email' ? 'Email me a code' : 'Sign in'}</button>
+      </form>
+      <p style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:18px 0 0;font-size:14px;font-weight:600">
+        ${mode === 'code' ? `<button class="linkbtn" id="again">Use another email</button><button class="linkbtn" id="rs">Send a new code</button>`
+          : mode === 'password' ? `<button class="linkbtn" data-go="forgot">Set or reset password</button><button class="linkbtn" id="sw">Not staff? Sign in with email</button>`
+          : `<span>New here? <button class="linkbtn" data-go="register">Get alerts</button></span><button class="linkbtn" id="sw">Staff sign in</button>`}
+      </p>`);
+    const sw = $('#sw'); if (sw) sw.onclick = () => { mode = mode === 'password' ? 'email' : 'password'; draw(); };
+    const again = $('#again'); if (again) again.onclick = () => { mode = 'email'; draw(); };
+    const sendCode = async () => {
+      const r = await api('POST', '/auth/code', { email });
+      if (r.use_password) { mode = 'password'; draw(); $('#e').innerHTML = '<div class="ok">This is a staff account. Sign in with your password.</div>'; return; }
+      mode = 'code'; draw();
+      $('#e').innerHTML = '<div class="ok">If this email is signed up for alerts, the code is on its way. Check spam too.</div>';
+    };
+    const rs = $('#rs'); if (rs) rs.onclick = async () => { try { await sendCode(); } catch (e) { showErr($('#e'), e.message); } };
+    $('#f').onsubmit = (ev) => {
+      ev.preventDefault();
+      const fd = Object.fromEntries(new FormData(ev.target));
+      if (fd.email) email = fd.email.trim();
+      busy($('#b'), async () => {
+        try {
+          if (mode === 'email') return await sendCode();
+          const r = mode === 'code'
+            ? await api('POST', '/auth/code-login', { email, code: fd.code.trim() })
+            : await api('POST', '/auth/login', fd);
+          if (r.need_verify) return go('verify', { email: r.email });
+          signedIn(r);
+        } catch (e) { showErr($('#e'), e.message); }
+      });
+    };
   };
+  draw();
 }
 function signedIn(r) { store.set('na_token', r.token); S.user = r.user; go(['staff', 'admin'].includes(r.user.role) ? 'staff' : 'dashboard'); }
 
@@ -892,7 +979,6 @@ function viewRegister() {
           <label class="f"><span>Phone ${crit ? '<small>for SMS and urgent calls</small>' : '<small>for SMS alerts</small>'}</span><input class="inp" name="phone" value="${h(d.phone)}" type="tel" placeholder="+220 7XXXXXX" ${crit ? 'required' : ''} autocomplete="tel"></label>
           <label class="f"><span>Email</span><input class="inp" name="email" type="email" value="${h(d.email)}" required autocomplete="email"></label>
           ${crit ? `<div class="infobox" style="margin:-4px 0 16px;font-size:13.5px;font-weight:600">Tip: use a shared inbox the whole team reads, like the theatre or admin email.</div>` : ''}
-          <label class="f"><span>Password <small>8+ characters</small></span><input class="inp" name="password" type="password" minlength="8" required autocomplete="new-password"></label>
           ${crit ? '' : `<label class="check" style="margin-bottom:18px"><input type="checkbox" name="sms_opt_in" ${d.sms_opt_in === false ? '' : 'checked'}> Also send me SMS alerts</label>`}
           <div class="row"><button type="button" class="btn ghost" id="bk">Back</button><button class="btn">Continue</button></div>
         </form>`);
@@ -904,19 +990,21 @@ function viewRegister() {
         st.step = 3; draw();
       };
     } else {
-      authShell(`${bar}<h1>Pick your areas</h1><p class="sub">You'll get alerts for every area you pick.</p><div id="e"></div><div id="ap"><div class="loading"><div class="spin"></div></div></div>
+      authShell(`${bar}<h1>Pick your areas</h1><p class="sub">You'll get alerts for every area you pick.</p><div id="e"></div>
+        <label class="check" style="margin-bottom:14px;padding:14px 16px;border:1.5px solid var(--line, #e3e7ef);border-radius:var(--r-s, 12px)"><input type="checkbox" id="all" ${st.all ? 'checked' : ''}> <span><b>Alert me about every outage, everywhere</b><br><span class="muted" style="font-weight:600;font-size:13.5px">We alert you about all outages, by phone alert or email. SMS and urgent alerts stay for your own places.</span></span></label>
+        <div id="ap"><div class="loading"><div class="spin"></div></div></div>
         <div class="row" style="margin-top:18px"><button type="button" class="btn ghost" id="bk">Back</button><button class="btn" id="go">${ic('bolt')} Turn on alerts</button></div>`);
       $('#bk').onclick = () => { st.step = 2; draw(); };
       try { await loadAreas(); } catch (e) { return showErr($('#e'), e.message); }
       const p = areaPicker(st.areas); $('#ap').replaceChildren(p.el);
       p.el.addEventListener('change', () => { st.areas = p.get(); });
+      $('#all').onchange = (ev) => { st.all = ev.target.checked; };
       $('#go').onclick = (ev) => busy(ev.currentTarget, async () => {
         st.areas = p.get();
-        if (!st.areas.length) return showErr($('#e'), 'Choose at least one area.');
+        if (!st.areas.length && !st.all) return showErr($('#e'), 'Choose at least one area, or turn on alerts for everywhere.');
         try {
-          const r = await api('POST', '/auth/register', { ...st.data, kind: st.kind, area_ids: st.areas });
-          if (r.need_verify) return go('verify', { email: r.email });
-          toast('You\'re in. Alerts are on.'); signedIn(r);
+          const r = await api('POST', '/auth/register', { ...st.data, kind: st.kind, area_ids: st.areas, alert_all: !!st.all });
+          go('verify', { email: r.email });
         } catch (e) {
           showErr($('#e'), e.message);
           if (e.status === 409) setTimeout(() => go('login'), 1800);
@@ -954,18 +1042,37 @@ function viewVerify() {
 
 function viewForgot() {
   let email = '';
-  authShell(`<div class="top-ic">${ic('shield')}</div><h1>Reset password</h1><p class="sub">We'll email you a code.</p><div id="e"></div>
+  authShell(`<div class="top-ic">${ic('shield')}</div><h1>Staff password</h1><p class="sub">Set or reset your staff password. We'll email you a code.</p><div id="e"></div>
     <form id="f1"><label class="f"><span>Email</span><input class="inp" name="email" type="email" required></label><button class="btn block" id="b1">Send code</button></form>
     <form id="f2" class="hidden">
       <label class="f"><span>Code</span><input class="inp codeinp" name="code" inputmode="numeric" maxlength="6" required></label>
       <label class="f"><span>New password</span><input class="inp" name="password" type="password" minlength="8" required autocomplete="new-password"></label>
       <button class="btn block" id="b2">Set new password</button>
     </form>
-    <p style="text-align:center;font-size:14px;margin:16px 0 0"><button class="linkbtn" data-go="login">Back to sign in</button></p>`);
+    <p style="text-align:center;font-size:14px;margin:16px 0 0"><button class="linkbtn" id="bks">Back to sign in</button></p>`);
+  $('#bks').onclick = () => go('login', { staff: 1 });
   $('#f1').onsubmit = (ev) => { ev.preventDefault(); email = ev.target.email.value;
-    busy($('#b1'), async () => { try { await api('POST', '/auth/forgot', { email }); $('#f1').classList.add('hidden'); $('#f2').classList.remove('hidden'); $('#e').innerHTML = '<div class="ok">If that email has an account, a code is on its way.</div>'; } catch (e) { showErr($('#e'), e.message); } }); };
+    busy($('#b1'), async () => { try { await api('POST', '/auth/forgot', { email }); $('#f1').classList.add('hidden'); $('#f2').classList.remove('hidden'); $('#e').innerHTML = '<div class="ok">If that email is a staff account, a code is on its way.</div>'; } catch (e) { showErr($('#e'), e.message); } }); };
   $('#f2').onsubmit = (ev) => { ev.preventDefault();
     busy($('#b2'), async () => { try { signedIn(await api('POST', '/auth/reset', { email, code: ev.target.code.value.trim(), password: ev.target.password.value })); toast('Password updated.'); } catch (e) { showErr($('#e'), e.message); } }); };
+}
+
+async function viewUnsub() {
+  authShell('<div class="loading"><div class="spin"></div></div>');
+  const token = S.params.token;
+  const done = (email, on) => {
+    authShell(`<div style="text-align:center">
+      <div class="top-ic" style="margin:0 auto 18px">${ic(on ? 'bell' : 'mail')}</div>
+      <h1>${on ? 'Alerts are back on' : 'You\'re unsubscribed'}</h1>
+      <p class="sub">${on ? `<b style="color:var(--ink)">${h(email)}</b> will get outage alerts again.` : `<b style="color:var(--ink)">${h(email)}</b> won't get any more outage alerts.`}</p></div>
+      <div id="e"></div>
+      ${on ? '' : `<button class="btn ghost block" id="re" style="margin-bottom:10px">${ic('bell')} Turn alerts back on</button>`}
+      <button class="btn block" data-go="home">Done</button>`);
+    const re = $('#re');
+    if (re) re.onclick = () => busy(re, async () => { try { const r = await api('POST', '/resubscribe', { token }); done(r.email, true); } catch (e) { showErr($('#e'), e.message); } });
+  };
+  try { const r = await api('POST', '/unsubscribe', { token }); done(r.email, false); }
+  catch (e) { authShell(`<h1>Link not valid</h1><p class="sub">${h(e.message)}</p><button class="btn block" data-go="home">Go home</button>`); }
 }
 
 async function viewAck() {
@@ -989,11 +1096,12 @@ async function viewAck() {
 async function viewDashboard() {
   loading();
   let alerts = [];
-  try { [S.user, alerts, S.outs] = await Promise.all([api('GET', '/me'), api('GET', '/me/alerts'), api('GET', '/public/outages')]); await loadAreas(); }
+  let pushState = 'unsupported';
+  try { [S.user, alerts, S.outs, pushState] = await Promise.all([api('GET', '/me'), api('GET', '/me/alerts'), api('GET', '/public/outages'), PUSH.state()]); await loadAreas(); }
   catch (e) { app().innerHTML = `<div class="wrap dash"><div class="err">${h(e.message)}</div></div>`; return; }
   renderNav();
   const u = S.user, k = KINDS[u.kind] || KINDS.other;
-  const pending = alerts.filter((a) => u.critical && !a.acked_at && ['notice', 'reminder'].includes(a.stage) && ['scheduled', 'active'].includes(a.status));
+  const pending = alerts.filter((a) => u.critical && a.in_area && !a.acked_at && ['notice', 'reminder'].includes(a.stage) && ['scheduled', 'active'].includes(a.status));
   const look = (a) => ({
     notice: a.kind === 'emergency' ? ['red', 'alert', 'Emergency'] : ['blue', 'bolt', 'Planned cut'],
     reminder: ['orange', 'clock', 'Reminder'], restored: ['green', 'check', 'Restored'], cancelled: ['grey', 'x', 'Cancelled'],
@@ -1007,13 +1115,15 @@ async function viewDashboard() {
   const offN = u.areas.filter((a) => areaStatus(a.id, S.outs).s === 'off').length;
   const soonN = u.areas.filter((a) => areaStatus(a.id, S.outs).s === 'soon').length;
   app().innerHTML = `<div class="wrap dash">
-    <div class="ptitle rise"><h1>My alerts</h1><p>${u.areas.length} place${u.areas.length === 1 ? '' : 's'} on alert · ${h(u.org_name || u.name)}</p></div>
+    <div class="ptitle rise"><h1>My alerts</h1><p>${u.alert_all ? 'Every outage, everywhere' + (u.areas.length ? ` · ${u.areas.length} own place${u.areas.length === 1 ? '' : 's'}` : '') : `${u.areas.length} place${u.areas.length === 1 ? '' : 's'} on alert`} · ${h(u.org_name || u.name)}</p></div>
     <div class="stats rise">
       <div class="stat"><b>${u.areas.length}</b><span>Places on alert</span></div>
       <div class="stat ${offN ? 'red' : 'green'}"><b>${offN}</b><span>Off right now</span></div>
       <div class="stat ${soonN ? 'amber' : ''}"><b>${soonN}</b><span>Cuts coming</span></div>
       ${u.critical ? `<div class="stat ${pending.length ? 'red' : 'green'}"><b>${pending.length}</b><span>To confirm</span></div>` : `<div class="stat"><b>${alerts.length}</b><span>Alerts received</span></div>`}
     </div>
+    ${u.subscribed === false ? `<div class="warnbox rise" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-weight:600"><span style="flex:1">Your alerts are off. You won't get phone alerts, emails or SMS.</span><button class="btn sm" id="resub">${ic('bell')} Turn alerts on</button></div>` : ''}
+    ${u.subscribed === false ? '' : pushBox(pushState)}
     ${pending.length ? `<div class="banner rise"><div class="ic">${ic('hosp')}</div><div style="flex:1"><b style="font-size:16px">${pending.length} ${pending.length > 1 ? 'warnings need' : 'warning needs'} your confirmation</b><div style="font-size:14px;opacity:.9;font-weight:600">Tap “I received this” so NAWEC knows your team is ready.</div></div></div>` : ''}
     <div class="dtop">
       <div class="pcard rise" id="pcard"></div>
@@ -1023,7 +1133,8 @@ async function viewDashboard() {
           <h1 style="overflow:hidden;text-overflow:ellipsis">${h(u.org_name || u.name)}</h1></div></div>
         ${u.critical ? `<span class="chip ${u.critical_verified ? 'green' : 'volt'}" style="align-self:flex-start">${ic('shield')} ${u.critical_verified ? 'Verified critical site' : 'Critical site · NAWEC checking'}</span>` : ''}
         <div class="ways">
-          <div class="way">${ic('mail')}<div><b>${h(u.email)}</b><small>Email on</small></div></div>
+          <div class="way wide">${ic('bell')}<div style="flex:1"><b>${pushState === 'on' ? 'Phone alerts on' : 'Phone alerts off'}</b><small>${pushState === 'on' ? 'This device · main alert' : u.push_devices ? `On ${u.push_devices} other device${u.push_devices > 1 ? 's' : ''}` : 'Not set up on this device'}</small></div>${pushState === 'on' ? '<button class="linkbtn" id="pushTest" style="font-size:13px">Send test</button>' : ''}</div>
+          <div class="way">${ic('mail')}<div><b>${h(u.email)}</b><small>${u.push_devices && !u.email_too && !u.critical ? 'Email backup' : 'Email on'}</small></div></div>
           <div class="way">${ic('sms')}<div><b>${u.phone ? h(u.phone) : 'No number'}</b><small>${u.critical ? 'SMS always on' : u.sms_opt_in && u.phone ? 'SMS on' : 'SMS off'}</small></div></div>
         </div>
         <div class="row">
@@ -1041,16 +1152,20 @@ async function viewDashboard() {
             <h4 style="margin-top:6px">${h(a.title)}</h4><div class="muted" style="font-size:13.5px;font-weight:600">${h(fmtRange(a.starts_at, a.ends_at))}</div>
             ${a.message ? `<div style="font-size:14px;margin-top:6px;white-space:pre-line;color:var(--ink-2)">${h(a.message)}</div>` : ''}
             ${a.acked_at ? `<div style="margin-top:8px"><span class="chip green">${ic('check')} Confirmed ${h(ago(a.acked_at))}</span></div>` : ''}
-            ${u.critical && !a.acked_at && ['notice', 'reminder'].includes(a.stage) ? `<button class="btn red sm" data-ack="${a.id}" style="margin-top:10px">${ic('check')} I received this</button>` : ''}
-          </div></div>`; }).join('') : `<div class="empty"><div class="em" style="background:var(--sky);color:var(--blue)">${ic('bell')}</div><b>No alerts yet</b>When an outage hits your areas, it shows up here and in your inbox.</div>`}</div>
+            ${a.in_area === false ? '<div style="margin-top:8px"><span class="chip">Outside your places</span></div>' : ''}
+            ${u.critical && a.in_area && !a.acked_at && ['notice', 'reminder'].includes(a.stage) ? `<button class="btn red sm" data-ack="${a.id}" style="margin-top:10px">${ic('check')} I received this</button>` : ''}
+          </div></div>`; }).join('') : `<div class="empty"><div class="em" style="background:var(--sky);color:var(--blue)">${ic('bell')}</div><b>No alerts yet</b>When an outage hits your areas, it shows up here, on your phone and by email.</div>`}</div>
       </div>
       <div class="card pad rise">
         <div class="ph" style="margin-bottom:14px"><h2 style="font-size:20px">Your areas</h2><button class="linkbtn" data-go="profile">Change</button></div>
-        <div class="areastat">${u.areas.map((a) => { const st = areaStatus(a.id, S.outs); return `<div class="as"><span style="display:flex;gap:8px;align-items:center">${ic('pin')}${h(a.name)}</span>${
-          st.s === 'off' ? '<span class="chip red"><span class="live"></span>Off now</span>' : st.s === 'soon' ? `<span class="chip volt">Cut in ${dur(new Date(st.o.starts_at) - Date.now())}</span>` : '<span class="chip green">Power on</span>'}</div>`; }).join('') || '<div class="muted">No areas yet.</div>'}</div>
+        ${u.alert_all ? `<div style="margin-bottom:10px"><span class="chip blue">${ic('bell')} Alerts for everywhere are on</span></div>` : ''}<div class="areastat">${u.areas.map((a) => { const st = areaStatus(a.id, S.outs); return `<div class="as"><span style="display:flex;gap:8px;align-items:center">${ic('pin')}${h(a.name)}</span>${
+          st.s === 'off' ? '<span class="chip red"><span class="live"></span>Off now</span>' : st.s === 'soon' ? `<span class="chip volt">Cut in ${dur(new Date(st.o.starts_at) - Date.now())}</span>` : '<span class="chip green">Power on</span>'}</div>`; }).join('') || `<div class="muted">${u.alert_all ? 'No own places picked. Add one to see its power status.' : 'No areas yet.'}</div>`}</div>
       </div>
     </div></div>`;
   if (pcArea) powerCard(pcArea); else $('#pcard').remove();
+  bindPush(viewDashboard);
+  const resub = $('#resub');
+  if (resub) resub.onclick = () => busy(resub, async () => { try { await api('POST', '/me/subscribed', { on: true }); toast('Alerts are on.'); viewDashboard(); } catch (e) { toastErr(e.message); } });
   app().querySelectorAll('[data-ack]').forEach((b) => b.onclick = () => busy(b, async () => {
     try { await api('POST', '/me/ack/' + b.dataset.ack); toast('Confirmed. NAWEC can see your team is ready.'); viewDashboard(); } catch (e) { toastErr(e.message); }
   }));
@@ -1073,18 +1188,36 @@ async function viewProfile() {
         <label class="f"><span>Phone</span><input class="inp" name="phone" type="tel" value="${h(u.phone)}" placeholder="+220 7XXXXXX"></label>
         <label class="f"><span>Email</span><input class="inp" value="${h(u.email)}" disabled style="background:var(--soft)"></label>
       </div>
+      <div id="pushRow" style="margin-bottom:14px"></div>
+      <label class="check" style="margin-bottom:12px"><input type="checkbox" id="emailToo" ${u.email_too ? 'checked' : ''}> Email me every alert too, even when my phone gets it <span class="muted" style="font-weight:600">(always on for critical sites)</span></label>
       <label class="check" style="margin-bottom:20px"><input type="checkbox" name="sms_opt_in" ${u.sms_opt_in ? 'checked' : ''}> Send me SMS alerts <span class="muted" style="font-weight:600">(always on for critical sites)</span></label>
-      <div style="margin-bottom:20px"><span style="display:block;font-weight:700;font-size:13.5px;margin-bottom:7px;color:var(--ink-2)">Areas</span><div id="ap"></div></div>
+      <label class="check" style="margin-bottom:14px;padding:14px 16px;border:1.5px solid var(--line, #e3e7ef);border-radius:var(--r-s, 12px)"><input type="checkbox" id="all" ${u.alert_all ? 'checked' : ''}> <span><b>Alert me about every outage, everywhere</b><br><span class="muted" style="font-weight:600;font-size:13.5px">We alert you about all outages, by phone alert or email. SMS and urgent alerts stay for your own places.</span></span></label>
+      <div style="margin-bottom:20px"><span style="display:block;font-weight:700;font-size:13.5px;margin-bottom:7px;color:var(--ink-2)">Your places</span><div id="ap"></div></div>
       <button class="btn block" id="b">Save changes</button>
-    </form></div></div>`;
-  $('#lo2').onclick = async () => { try { await api('POST', '/auth/logout'); } catch {} store.set('na_token', null); S.user = null; go('home'); toast('Signed out.', 'info'); };
+    </form>
+    ${u.subscribed === false ? '' : `<p style="text-align:center;font-size:14px;margin:16px 0 0;font-weight:600"><button class="linkbtn" id="unsub" style="color:var(--ink-2)">Stop all alerts</button></p>`}
+    </div></div>`;
+  const us = $('#unsub');
+  if (us) us.onclick = async () => {
+    if (!(await confirmBox({ title: 'Stop all alerts?', text: 'You won\'t get any outage phone alerts, emails or SMS. You can turn them back on any time.', ok: 'Stop alerts' }))) return;
+    try { await api('POST', '/me/subscribed', { on: false }); toast('Alerts are off.', 'info'); go('dashboard'); } catch (e) { toastErr(e.message); }
+  };
+  $('#lo2').onclick = signOut;
   const p = areaPicker(u.areas.map((a) => a.id)); $('#ap').replaceChildren(p.el);
+  const drawPush = async () => {
+    const st = await PUSH.state();
+    $('#pushRow').innerHTML = st === 'on'
+      ? `<div class="way" style="justify-content:space-between">${ic('bell')}<div style="flex:1"><b>Phone alerts are on</b><small>This device gets alerts first. Email is the backup.</small></div><button type="button" class="btn ghost sm" id="pushTest">Test</button><button type="button" class="btn ghost sm" id="pushOff">Turn off</button></div>`
+      : pushBox(st).replace('pushbox rise', 'pushbox').replace('id="pushOn"', 'id="pushOn" type="button"');
+    bindPush(drawPush);
+  };
+  drawPush();
   $('#f').onsubmit = (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
     busy($('#b'), async () => {
       try {
-        S.user = await api('PUT', '/me', { ...Object.fromEntries(fd), sms_opt_in: fd.get('sms_opt_in') === 'on', area_ids: p.get() });
+        S.user = await api('PUT', '/me', { ...Object.fromEntries(fd), sms_opt_in: fd.get('sms_opt_in') === 'on', area_ids: p.get(), alert_all: $('#all').checked, email_too: $('#emailToo').checked });
         toast('Saved. Your alerts now follow these places.'); go('dashboard');
       } catch (e) { showErr($('#e'), e.message); window.scrollTo(0, 0); }
     });
@@ -1128,7 +1261,7 @@ async function staffOverview(pane) {
   pane.innerHTML = `
     <div class="ptitle"><h1>Control room</h1><p>Good ${hr < 12 ? 'morning' : hr < 17 ? 'afternoon' : 'evening'}, ${h((S.user.name || '').split(' ')[0])}. ${live.length ? `${live.length} outage${live.length > 1 ? 's' : ''} live or coming up.` : 'No outages right now.'}</p></div>
     <div class="kpis">
-      <div class="kpi k1 rise"><div class="ki">${ic('users')}</div><div><div class="v">${s.subscribers}</div><div class="l">Subscribers</div></div></div>
+      <div class="kpi k1 rise"><div class="ki">${ic('users')}</div><div><div class="v">${s.subscribers}</div><div class="l">Subscribers${s.on_push ? ` · ${s.on_push} on phone alerts` : ''}</div></div></div>
       <div class="kpi k4 rise"><div class="ki">${ic('hosp')}</div><div><div class="v">${s.critical_sites}</div><div class="l">Critical sites${s.critical_unverified ? ` · ${s.critical_unverified} to check` : ''}</div></div></div>
       <div class="kpi k3 rise"><div class="ki">${ic('bolt')}</div><div><div class="v">${s.active_outages}<span style="font-size:18px;opacity:.7"> / ${s.scheduled_outages}</span></div><div class="l">Off now / scheduled</div></div></div>
       <div class="kpi k2 rise ${s.unconfirmed_critical ? 'k-alert' : ''}"><div class="ki">${ic('phone')}</div><div><div class="v">${s.unconfirmed_critical}</div><div class="l">Hospitals not confirmed</div></div></div>
@@ -1214,7 +1347,7 @@ function staffNew(pane) {
       preview = await api('POST', '/staff/preview', { area_ids: ids });
       const c = preview.critical;
       $('#pv').innerHTML = `<div class="infobox"><div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-          <div><div style="font-size:30px;font-weight:800;line-height:1">${preview.total}</div><div class="muted" style="font-weight:700;font-size:13px">will be alerted</div></div>
+          <div><div style="font-size:30px;font-weight:800;line-height:1">${preview.total}</div><div class="muted" style="font-weight:700;font-size:13px">will be alerted${preview.everywhere ? ` (incl. ${preview.everywhere} who chose everywhere)` : ''}</div></div>
           <div><div style="font-size:30px;font-weight:800;line-height:1;color:var(--red)">${c.length}</div><div class="muted" style="font-weight:700;font-size:13px">critical sites, first</div></div></div>
         ${c.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">${c.map((x) => `<span class="chip red">${h(KINDS[x.kind]?.[0] || '')} ${h(x.org_name || x.name)}</span>`).join('')}</div>` : ''}</div>`;
       checkNotice();
@@ -1241,7 +1374,7 @@ function staffNew(pane) {
     }).then((yes) => yes && busy(sendBtn, async () => {
       try {
         const r = await api('POST', '/staff/outages', body);
-        toast(`Alert sent to ${r.result.recipients} ${r.result.recipients === 1 ? 'person' : 'people'}: ${r.result.emailSent} email, ${r.result.smsSent} SMS${r.result.stillPending ? `. ${r.result.stillPending} still sending.` : '.'}`, 6000);
+        toast(`Alert sent to ${r.result.recipients} ${r.result.recipients === 1 ? 'person' : 'people'}: ${r.result.pushSent || 0} phone, ${r.result.emailSent} email, ${r.result.smsSent} SMS${r.result.stillPending ? `. ${r.result.stillPending} still sending.` : '.'}`, 6000);
         openOutage(r.id);
       } catch (e) {
         showErr($('#e'), e.message); pane.scrollIntoView();
@@ -1295,7 +1428,7 @@ async function staffOutage(pane, id) {
       ${critical.length ? `<div class="tscroll"><table class="tbl"><thead><tr><th>Facility</th><th>Contact</th><th>Delivered</th><th>Status</th></tr></thead><tbody>
         ${critical.map((c) => `<tr><td><b>${h(KINDS[c.kind]?.[0] || '')} ${h(c.org_name || c.name)}</b>${c.critical_verified ? '' : ' <span class="chip volt">unverified</span>'}</td>
           <td style="font-weight:600">${h(c.name)}<div style="margin-top:4px">${c.phone ? `<a class="callbtn" href="tel:${h(c.phone)}">${ic('phone')} ${h(c.phone)}</a>` : ''}</div></td>
-          <td>${c.email_ok ? `<span class="chip blue">${ic('mail')}</span> ` : ''}${c.sms_ok ? `<span class="chip green">${ic('sms')}</span>` : ''}${!c.email_ok && !c.sms_ok ? '<span class="chip red">Not delivered</span>' : ''}</td>
+          <td>${c.push_ok ? `<span class="chip blue">${ic('bell')}</span> ` : ''}${c.email_ok ? `<span class="chip blue">${ic('mail')}</span> ` : ''}${c.sms_ok ? `<span class="chip green">${ic('sms')}</span>` : ''}${!c.email_ok && !c.sms_ok && !c.push_ok ? '<span class="chip red">Not delivered</span>' : ''}</td>
           <td>${c.acked_at ? `<span class="chip green">${ic('check')} Confirmed ${h(ago(c.acked_at))}</span>` : '<span class="chip red"><span class="live"></span>Waiting · call them</span>'}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="muted" style="font-weight:600">No critical facilities in these areas.</div>'}
     </div>
@@ -1303,7 +1436,7 @@ async function staffOutage(pane, id) {
       <h3 style="font-size:18px;margin-bottom:14px">Delivery</h3>
       ${stages.length ? stages.map((s) => `<div style="margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>${names[s.stage] || s.stage}</b>
         ${s.email_failed + s.sms_failed + s.email_pending + s.sms_pending ? `<button class="btn ghost sm" data-resend="${s.stage}">${ic('refresh')} Retry unsent</button>` : ''}</div>
-        <div class="statgrid"><div><b>${s.total}</b><span>Recipients</span></div><div><b>${s.email_sent}</b><span>Emails sent${s.email_failed ? ` · <span style="color:var(--red)">${s.email_failed} failed</span>` : ''}${s.email_pending ? ` · ${s.email_pending} pending` : ''}</span></div>
+        <div class="statgrid"><div><b>${s.total}</b><span>Recipients</span></div><div><b>${s.push_sent}</b><span>Phone alerts${s.push_seen ? ` · ${s.push_seen} shown` : ''}</span></div><div><b>${s.email_sent}</b><span>Emails sent${s.email_failed ? ` · <span style="color:var(--red)">${s.email_failed} failed</span>` : ''}${s.email_pending ? ` · ${s.email_pending} pending` : ''}${s.email_held ? ` · ${s.email_held} waiting on phone` : ''}${s.email_saved ? ` · ${s.email_saved} not needed` : ''}</span></div>
         <div><b>${s.sms_sent}</b><span>SMS sent${s.sms_failed ? ` · <span style="color:var(--red)">${s.sms_failed} failed</span>` : ''}${s.sms_pending ? ` · ${s.sms_pending} pending` : ''}</span></div><div><b>${s.acked}</b><span>Confirmed</span></div></div></div>`).join('') : '<div class="muted" style="font-weight:600">Nobody is subscribed to these areas yet.</div>'}
     </div>`;
   $('#bk').onclick = () => { S.staffTab = 'outages'; S.params = {}; history.pushState({ view: 'staff', params: {} }, '', '/#staff'); viewStaff(); };
@@ -1314,7 +1447,7 @@ async function staffOutage(pane, id) {
   if (cn) cn.onclick = async () => { if (!(await confirmBox({ title: 'Cancel this planned cut?', text: 'Everyone alerted gets a message that the cut will not go ahead.', ok: 'Cancel the cut', danger: true }))) return;
     busy(cn, async () => { try { await api('POST', `/staff/outages/${o.id}/cancel`, {}); toast('Cancellation sent.'); viewStaff(); } catch (e) { toastErr(e.message); } }); };
   pane.querySelectorAll('[data-resend]').forEach((b) => b.onclick = () => busy(b, async () => {
-    try { const r = await api('POST', `/staff/outages/${o.id}/resend`, { stage: b.dataset.resend }); toast(`Retried: ${r.result.emailSent} email, ${r.result.smsSent} SMS sent.`); viewStaff(); } catch (e) { toastErr(e.message); }
+    try { const r = await api('POST', `/staff/outages/${o.id}/resend`, { stage: b.dataset.resend }); toast(`Retried: ${r.result.pushSent || 0} phone, ${r.result.emailSent} email, ${r.result.smsSent} SMS sent.`); viewStaff(); } catch (e) { toastErr(e.message); }
   }));
 }
 
@@ -1331,7 +1464,7 @@ async function staffSubscribers(pane) {
       ${rows.map((u) => `<tr>
         <td><b>${h(KINDS[u.kind]?.[0] || '')} ${h(u.org_name || u.name)}</b><div class="muted" style="font-size:12.5px;font-weight:600">${h(KINDS[u.kind]?.[1] || u.kind)}${u.org_name ? ' · ' + h(u.name) : ''}</div></td>
         <td style="font-size:13.5px;font-weight:600">${h(u.email)}<div style="margin-top:4px">${u.phone ? `<a class="callbtn" href="tel:${h(u.phone)}">${ic('phone')} ${h(u.phone)}</a>` : ''}</div></td>
-        <td style="font-size:13px;max-width:240px;color:var(--ink-2);font-weight:600">${h(u.area_names || '—')}</td>
+        <td style="font-size:13px;max-width:240px;color:var(--ink-2);font-weight:600">${u.alert_all ? '<span class="chip blue" style="font-size:11.5px">Everywhere</span> ' : ''}${h(u.area_names || (u.alert_all ? '' : '—'))}</td>
         <td>${!u.email_verified ? '<span class="chip grey">Email not confirmed</span>' : u.critical ? (u.critical_verified ? `<span class="chip green">${ic('shield')} Verified</span> <button class="linkbtn" style="font-size:12px;color:var(--muted)" data-vc="${u.id}" data-v="0">undo</button>` : `<button class="btn sm volt" data-vc="${u.id}" data-v="1">${ic('shield')} Verify critical</button>`) : '<span class="chip">Subscriber</span>'}${u.active ? '' : ' <span class="chip red">Disabled</span>'}</td>
         ${isAdmin ? `<td>${u.id === S.user.id ? '<span class="chip blue">You</span>' : `<select class="inp" style="padding:8px 34px 8px 10px;min-width:130px" data-role="${u.id}">${['subscriber', 'staff', 'admin'].map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>`}</td>` : ''}
       </tr>`).join('')}</tbody></table></div>` : `<div class="empty"><div class="em" style="background:var(--sky);color:var(--blue)">${ic('search')}</div><b>No matches</b></div>`;
@@ -1381,11 +1514,20 @@ LOGO_OK = true;
 (async function boot() {
   const qs = new URLSearchParams(location.search);
   if (store.get('na_token')) { try { S.user = await api('GET', '/me'); } catch { S.user = null; } }
+  if (S.user) PUSH.sync();
   if (qs.get('ack')) { S.view = 'ack'; S.params = { token: qs.get('ack') }; history.replaceState({ view: 'ack', params: S.params }, '', '/'); }
+  else if (qs.get('unsub')) { S.view = 'unsub'; S.params = { token: qs.get('unsub') }; history.replaceState({ view: 'unsub', params: S.params }, '', '/'); }
   else { const p = parseHash(); S.view = p.view; S.params = p.params; history.replaceState(p, '', location.href); }
   render();
 })();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    const m = e.data || {};
+    if (m.type === 'alert' && ['dashboard', 'home'].includes(S.view)) render(); // new alert arrived: refresh
+    if (m.type === 'open') { const v = (new URL(m.url).hash.replace('#', '') || 'home').split('/')[0]; go(S.user || v === 'home' ? v : 'login'); }
+  });
+}
 </script>
 </body>
 </html>

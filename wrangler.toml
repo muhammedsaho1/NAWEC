@@ -1,0 +1,5 @@
+# Cloudflare Pages settings (read automatically when the repo is connected)
+name = "nawec"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]

@@ -1,8 +1,8 @@
 // Single API router for NAWEC Alerts — served at /api/*
 import {
-  q, ensureSchema, hashPassword, checkPassword, createSession, userFromRequest, sha256, randomCode,
+  q, ensureSchema, hashPassword, checkPassword, createSession, userFromRequest, sha256, randomCode, randomToken,
   sendCodeEmail, sendWelcomeEmail, publicUser, adminEmails, CRITICAL_KINDS, ALL_KINDS, normPhone, dispatch,
-  outageWithAreas, audit,
+  outageWithAreas, audit, inArea, vapidKeys, pushToUser,
 } from '../lib/core.mjs';
 
 const MIN_NOTICE_HOURS = Number(process.env.MIN_NOTICE_HOURS || 2);
@@ -15,6 +15,7 @@ const fail = (status, msg) => { throw new HttpError(status, msg); };
 const cleanEmail = (e) => String(e || '').trim().toLowerCase();
 const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 const str = (s, max = 200) => String(s ?? '').trim().slice(0, max);
+const isStaffRole = (r) => r === 'staff' || r === 'admin';
 const ids = (arr) => [...new Set((Array.isArray(arr) ? arr : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
 
 async function issueCode(email, purpose) {
@@ -49,7 +50,8 @@ async function setUserAreas(userId, areaIds) {
 
 async function meWithAreas(u) {
   const areas = await q(`SELECT a.id, a.name, a.region FROM user_areas ua JOIN areas a ON a.id=ua.area_id WHERE ua.user_id=$1 ORDER BY a.region, a.name`, [u.id]);
-  return { ...publicUser(u), areas };
+  const [{ n }] = await q(`SELECT count(*)::int AS n FROM push_subs WHERE user_id=$1`, [u.id]);
+  return { ...publicUser(u), areas, push_devices: n };
 }
 
 /* ---------------- Routes ---------------- */
@@ -103,54 +105,108 @@ route('POST', '/ack', async ({ body }) => {
   return json({ ok: true, acked_at: d.acked_at, facility: u?.org_name || u?.name, outage: o && { title: o.title, kind: o.kind, starts_at: o.starts_at, ends_at: o.ends_at, areas: o.areas } });
 });
 
-/* Auth */
+// One-click unsubscribe from the link at the bottom of every alert email.
+route('POST', '/unsubscribe', async ({ body }) => {
+  const token = str(body.token, 100);
+  const [u] = token ? await q(`UPDATE users SET subscribed=false WHERE unsub_token=$1 RETURNING id, email`, [token]) : [];
+  if (!u) fail(404, 'This unsubscribe link is not valid.');
+  await q(`UPDATE deliveries SET email_status = CASE WHEN email_status IN ('pending','failed') THEN 'skipped' ELSE email_status END,
+                                 sms_status   = CASE WHEN sms_status   IN ('pending','failed') THEN 'skipped' ELSE sms_status END,
+                                 push_status  = CASE WHEN push_status = 'pending' THEN 'skipped' ELSE push_status END
+           WHERE user_id=$1`, [u.id]);
+  await q(`UPDATE deliveries SET email_status='skipped' WHERE user_id=$1 AND email_status='held'`, [u.id]);
+  await audit(u.id, 'unsubscribed', {});
+  return json({ ok: true, email: u.email });
+});
+route('POST', '/resubscribe', async ({ body }) => {
+  const token = str(body.token, 100);
+  const [u] = token ? await q(`UPDATE users SET subscribed=true WHERE unsub_token=$1 RETURNING id, email`, [token]) : [];
+  if (!u) fail(404, 'This link is not valid.');
+  await audit(u.id, 'resubscribed', {});
+  return json({ ok: true, email: u.email });
+});
+
+/* Web push */
+route('GET', '/push/key', async () => json({ key: (await vapidKeys()).publicKey }));
+
+// The phone calls this when it shows an alert, so the backup email isn't sent.
+route('POST', '/push/seen', async ({ body }) => {
+  const token = str(body.r, 100);
+  if (token) await q(`UPDATE deliveries SET push_seen_at = COALESCE(push_seen_at, now()),
+                        email_status = CASE WHEN email_status='held' THEN 'not_needed' ELSE email_status END
+                      WHERE ack_token=$1`, [token]);
+  return json({ ok: true });
+});
+
+route('POST', '/push/subscribe', async ({ user, body, req }) => {
+  const sub = body.subscription || {};
+  const endpoint = str(sub.endpoint, 1000), p256dh = str(sub.keys?.p256dh, 200), auth = str(sub.keys?.auth, 100);
+  if (!/^https:\/\//.test(endpoint) || !p256dh || !auth) fail(400, 'This phone could not turn on alerts.');
+  // One device belongs to whoever is signed in on it now.
+  await q(`INSERT INTO push_subs (user_id, endpoint, p256dh, auth, device) VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (endpoint) DO UPDATE SET user_id=EXCLUDED.user_id, p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth, device=EXCLUDED.device, fails=0`,
+    [user.id, endpoint, p256dh, auth, str(body.device || req.headers.get('user-agent'), 200)]);
+  const [{ n }] = await q(`SELECT count(*)::int AS n FROM push_subs WHERE user_id=$1`, [user.id]);
+  return json({ ok: true, push_devices: n });
+}, 'user');
+
+// Not signed in on purpose: used when signing out, so the next person doesn't get these alerts.
+route('POST', '/push/unsubscribe', async ({ body }) => {
+  const endpoint = str(body.endpoint, 1000);
+  if (endpoint) await q(`DELETE FROM push_subs WHERE endpoint=$1`, [endpoint]);
+  return json({ ok: true });
+});
+
+route('POST', '/push/test', async ({ user }) => {
+  const r = await pushToUser(user.id, { title: 'Phone alerts are on', body: "This is how NAWEC outage alerts will look on this phone.", tag: 'test', url: '/#dashboard' });
+  if (!r.devices) fail(400, 'Phone alerts are not on for this account yet.');
+  if (!r.sent) fail(502, 'Could not reach your phone. Turn phone alerts off and on again.');
+  return json({ ok: true, sent: r.sent });
+}, 'user');
+
+/* Auth — subscribers have no password: confirm email once, sign in later with an emailed code.
+   Staff and admins also have a password. */
 route('POST', '/auth/register', async ({ body }) => {
   const email = cleanEmail(body.email);
-  const password = String(body.password || '');
   const kind = ALL_KINDS.includes(body.kind) ? body.kind : 'household';
   const areaIds = ids(body.area_ids);
+  const alertAll = body.alert_all === true;
   if (!isEmail(email)) fail(400, 'Enter a valid email.');
-  if (password.length < 8) fail(400, 'Password must be at least 8 characters.');
   if (!str(body.name)) fail(400, 'Enter your name.');
   if (CRITICAL_KINDS.includes(kind) && !str(body.org_name)) fail(400, 'Enter the facility name.');
   if (CRITICAL_KINDS.includes(kind) && !normPhone(body.phone)) fail(400, 'A phone number is required for critical facilities.');
-  if (!areaIds.length) fail(400, 'Choose at least one area.');
+  if (!areaIds.length && !alertAll) fail(400, 'Choose at least one area, or turn on alerts for everywhere.');
 
   const [existing] = await q(`SELECT id, email_verified FROM users WHERE email=$1`, [email]);
-  if (existing?.email_verified) fail(409, 'An account with this email already exists. Sign in instead.');
-  const isAdmin = adminEmails().includes(email);
-  const fields = [str(body.name, 120), normPhone(body.phone), str(body.org_name, 160), kind, CRITICAL_KINDS.includes(kind), body.sms_opt_in !== false, hashPassword(password)];
+  if (existing?.email_verified) fail(409, 'This email is already signed up. Sign in instead.');
+  const fields = [str(body.name, 120), normPhone(body.phone), str(body.org_name, 160), kind, CRITICAL_KINDS.includes(kind), body.sms_opt_in !== false, alertAll];
   let userId;
   if (existing) {
-    await q(`UPDATE users SET name=$2, phone=$3, org_name=$4, kind=$5, critical=$6, sms_opt_in=$7, password_hash=$8 WHERE id=$1`, [existing.id, ...fields]);
+    // not confirmed yet: whoever confirms the email owns these details
+    await q(`UPDATE users SET name=$2, phone=$3, org_name=$4, kind=$5, critical=$6, sms_opt_in=$7, alert_all=$8 WHERE id=$1`, [existing.id, ...fields]);
     userId = existing.id;
   } else {
-    const [u] = await q(`INSERT INTO users (email, name, phone, org_name, kind, critical, sms_opt_in, password_hash, role)
-                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [email, ...fields, isAdmin ? 'admin' : 'subscriber']);
+    const [u] = await q(`INSERT INTO users (email, name, phone, org_name, kind, critical, sms_opt_in, alert_all, unsub_token)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [email, ...fields, randomToken(24)]);
     userId = u.id;
   }
   await setUserAreas(userId, areaIds);
-  // Admin accounts confirm their email first. Everyone else is in straight away.
-  if (isAdmin) {
-    await issueCode(email, 'verify');
-    return json({ ok: true, need_verify: true, email });
-  }
-  const [u] = await q(`UPDATE users SET email_verified=true WHERE id=$1 RETURNING *`, [userId]);
-  const me = await meWithAreas(u);
-  try { await sendWelcomeEmail(u, me.areas.map((a) => a.name)); } catch (e) { console.error('welcome email', e); }
-  await audit(userId, 'registered', { kind });
-  return json({ token: await createSession(userId), user: me });
+  // Alerts only start once the email is confirmed, so nobody can sign up someone else's inbox.
+  await issueCode(email, 'verify');
+  return json({ ok: true, need_verify: true, email });
 });
 
 route('POST', '/auth/verify', async ({ body }) => {
   const email = cleanEmail(body.email);
   await useCode(email, 'verify', body.code);
-  const [u] = await q(`UPDATE users SET email_verified=true,
+  const [u] = await q(`UPDATE users SET email_verified=true, subscribed=true,
                          role = CASE WHEN $2 THEN 'admin' ELSE role END
                        WHERE email=$1 RETURNING *`, [email, adminEmails().includes(email)]);
   if (!u) fail(404, 'Account not found.');
   await audit(u.id, 'verified_email', {});
-  return json({ token: await createSession(u.id), user: await meWithAreas(u) });
+  const me = await meWithAreas(u);
+  try { await sendWelcomeEmail(u, me.areas.map((a) => a.name)); } catch (e) { console.error('welcome email', e); }
+  return json({ token: await createSession(u.id), user: me });
 });
 
 route('POST', '/auth/resend', async ({ body }) => {
@@ -160,17 +216,35 @@ route('POST', '/auth/resend', async ({ body }) => {
   return json({ ok: true });
 });
 
+// Step 1 of sign-in: email a code. Staff/admin are told to use their password.
+route('POST', '/auth/code', async ({ body }) => {
+  const email = cleanEmail(body.email);
+  if (!isEmail(email)) fail(400, 'Enter a valid email.');
+  const [u] = await q(`SELECT id, role, active FROM users WHERE email=$1`, [email]);
+  if (u && isStaffRole(u.role)) return json({ use_password: true });
+  if (u && u.active) await issueCode(email, 'login');
+  return json({ ok: true }); // same answer whether or not the email is signed up
+});
+
+// Step 2: code -> signed in. Using the code also confirms the email.
+route('POST', '/auth/code-login', async ({ body }) => {
+  const email = cleanEmail(body.email);
+  await useCode(email, 'login', body.code);
+  const [u] = await q(`UPDATE users SET email_verified=true WHERE email=$1 AND active RETURNING *`, [email]);
+  if (!u) fail(404, 'Account not found.');
+  if (isStaffRole(u.role)) fail(403, 'Staff sign in with a password.');
+  return json({ token: await createSession(u.id), user: await meWithAreas(u) });
+});
+
+// Staff and admin sign-in.
 route('POST', '/auth/login', async ({ body }) => {
   const email = cleanEmail(body.email);
   const [u] = await q(`SELECT * FROM users WHERE email=$1`, [email]);
   if (!u || !checkPassword(String(body.password || ''), u.password_hash)) fail(401, 'Wrong email or password.');
   if (!u.active) fail(403, 'This account is disabled.');
   if (!u.email_verified) {
-    if (adminEmails().includes(email)) {
-      await issueCode(email, 'verify').catch(() => {});
-      return json({ need_verify: true, email });
-    }
-    await q(`UPDATE users SET email_verified=true WHERE id=$1`, [u.id]); u.email_verified = true;
+    await issueCode(email, 'verify').catch(() => {});
+    return json({ need_verify: true, email });
   }
   if (adminEmails().includes(email) && u.role !== 'admin') { await q(`UPDATE users SET role='admin' WHERE id=$1`, [u.id]); u.role = 'admin'; }
   return json({ token: await createSession(u.id), user: await meWithAreas(u) });
@@ -178,8 +252,8 @@ route('POST', '/auth/login', async ({ body }) => {
 
 route('POST', '/auth/forgot', async ({ body }) => {
   const email = cleanEmail(body.email);
-  const [u] = await q(`SELECT id FROM users WHERE email=$1`, [email]);
-  if (u) await issueCode(email, 'reset');
+  const [u] = await q(`SELECT id, role FROM users WHERE email=$1 AND email_verified`, [email]);
+  if (u && (isStaffRole(u.role) || adminEmails().includes(email))) await issueCode(email, 'reset');
   return json({ ok: true }); // same answer either way
 });
 
@@ -204,24 +278,31 @@ route('GET', '/me', async ({ user }) => json(await meWithAreas(user)), 'user');
 
 route('PUT', '/me', async ({ user, body }) => {
   const areaIds = ids(body.area_ids);
-  if (!areaIds.length) fail(400, 'Choose at least one area.');
+  const alertAll = body.alert_all === true;
+  if (!areaIds.length && !alertAll) fail(400, 'Choose at least one area, or turn on alerts for everywhere.');
   const kind = ALL_KINDS.includes(body.kind) ? body.kind : user.kind;
   const critical = CRITICAL_KINDS.includes(kind);
   if (critical && !normPhone(body.phone)) fail(400, 'A phone number is required for critical facilities.');
   const kindChanged = kind !== user.kind;
-  const [u] = await q(`UPDATE users SET name=$2, phone=$3, org_name=$4, kind=$5, critical=$6, sms_opt_in=$7,
+  const [u] = await q(`UPDATE users SET name=$2, phone=$3, org_name=$4, kind=$5, critical=$6, sms_opt_in=$7, subscribed=true, alert_all=$9, email_too=$10,
                          critical_verified = CASE WHEN $8 THEN false ELSE critical_verified END
                        WHERE id=$1 RETURNING *`,
-    [user.id, str(body.name, 120) || user.name, normPhone(body.phone), str(body.org_name, 160), kind, critical, body.sms_opt_in !== false, kindChanged]);
+    [user.id, str(body.name, 120) || user.name, normPhone(body.phone), str(body.org_name, 160), kind, critical, body.sms_opt_in !== false, kindChanged, alertAll, body.email_too === true]);
   await setUserAreas(user.id, areaIds);
+  return json(await meWithAreas(u));
+}, 'user');
+
+route('POST', '/me/subscribed', async ({ user, body }) => {
+  const [u] = await q(`UPDATE users SET subscribed=$2 WHERE id=$1 RETURNING *`, [user.id, body.on !== false]);
+  await audit(user.id, body.on !== false ? 'resubscribed' : 'unsubscribed', {});
   return json(await meWithAreas(u));
 }, 'user');
 
 route('GET', '/me/alerts', async ({ user }) => {
   const rows = await q(`
-    SELECT d.id, d.stage, d.sent_at, d.acked_at, d.email_status, d.sms_status,
+    SELECT d.id, d.stage, d.sent_at, d.acked_at, d.email_status, d.sms_status, d.push_status, ${inArea('u')} AS in_area,
            o.id AS outage_id, o.kind, o.status, o.title, o.message, o.starts_at, o.ends_at
-    FROM deliveries d JOIN outages o ON o.id=d.outage_id
+    FROM deliveries d JOIN outages o ON o.id=d.outage_id JOIN users u ON u.id=d.user_id
     WHERE d.user_id=$1 ORDER BY COALESCE(d.sent_at, o.created_at) DESC LIMIT 100`, [user.id]);
   return json(rows);
 }, 'user');
@@ -235,13 +316,15 @@ route('POST', '/me/ack/:id', async ({ user, params }) => {
 /* Staff */
 route('GET', '/staff/stats', async () => {
   const [s] = await q(`SELECT
-    (SELECT count(*) FROM users WHERE email_verified)::int AS subscribers,
-    (SELECT count(*) FROM users WHERE email_verified AND critical)::int AS critical_sites,
-    (SELECT count(*) FROM users WHERE email_verified AND critical AND NOT critical_verified)::int AS critical_unverified,
+    (SELECT count(*) FROM users WHERE email_verified AND subscribed)::int AS subscribers,
+    (SELECT count(*) FROM users WHERE email_verified AND subscribed AND alert_all)::int AS everywhere,
+    (SELECT count(DISTINCT p.user_id) FROM push_subs p JOIN users u ON u.id=p.user_id WHERE u.email_verified AND u.subscribed)::int AS on_push,
+    (SELECT count(*) FROM users WHERE email_verified AND subscribed AND critical)::int AS critical_sites,
+    (SELECT count(*) FROM users WHERE email_verified AND subscribed AND critical AND NOT critical_verified)::int AS critical_unverified,
     (SELECT count(*) FROM outages WHERE status='active')::int AS active_outages,
     (SELECT count(*) FROM outages WHERE status='scheduled')::int AS scheduled_outages,
     (SELECT count(*) FROM deliveries d JOIN users u ON u.id=d.user_id JOIN outages o ON o.id=d.outage_id
-       WHERE u.critical AND d.acked_at IS NULL AND d.stage IN ('notice','reminder') AND o.status IN ('scheduled','active'))::int AS unconfirmed_critical,
+       WHERE u.critical AND ${inArea()} AND d.acked_at IS NULL AND d.stage IN ('notice','reminder') AND o.status IN ('scheduled','active'))::int AS unconfirmed_critical,
     (SELECT count(*) FROM deliveries WHERE sent_at > now() - interval '7 days')::int AS alerts_7d`);
   return json(s);
 }, 'staff');
@@ -251,8 +334,8 @@ route('GET', '/staff/outages', async () => {
     SELECT o.*, u.name AS created_by_name,
       (SELECT string_agg(a.name, ', ' ORDER BY a.name) FROM outage_areas oa JOIN areas a ON a.id=oa.area_id WHERE oa.outage_id=o.id) AS area_names,
       (SELECT count(DISTINCT d.user_id) FROM deliveries d WHERE d.outage_id=o.id)::int AS recipients,
-      (SELECT count(DISTINCT d.user_id) FROM deliveries d JOIN users cu ON cu.id=d.user_id WHERE d.outage_id=o.id AND cu.critical)::int AS critical_total,
-      (SELECT count(DISTINCT d.user_id) FROM deliveries d JOIN users cu ON cu.id=d.user_id WHERE d.outage_id=o.id AND cu.critical AND d.acked_at IS NOT NULL)::int AS critical_acked
+      (SELECT count(DISTINCT d.user_id) FROM deliveries d JOIN users cu ON cu.id=d.user_id WHERE d.outage_id=o.id AND cu.critical AND ${inArea('cu')})::int AS critical_total,
+      (SELECT count(DISTINCT d.user_id) FROM deliveries d JOIN users cu ON cu.id=d.user_id WHERE d.outage_id=o.id AND cu.critical AND ${inArea('cu')} AND d.acked_at IS NOT NULL)::int AS critical_acked
     FROM outages o LEFT JOIN users u ON u.id=o.created_by
     ORDER BY o.created_at DESC LIMIT 200`);
   return json(rows);
@@ -265,6 +348,10 @@ route('GET', '/staff/outages/:id', async ({ params }) => {
       count(*) FILTER (WHERE email_status='sent')::int AS email_sent,
       count(*) FILTER (WHERE email_status='failed')::int AS email_failed,
       count(*) FILTER (WHERE email_status='pending')::int AS email_pending,
+      count(*) FILTER (WHERE email_status='held')::int AS email_held,
+      count(*) FILTER (WHERE email_status='not_needed')::int AS email_saved,
+      count(*) FILTER (WHERE push_status='sent')::int AS push_sent,
+      count(*) FILTER (WHERE push_seen_at IS NOT NULL)::int AS push_seen,
       count(*) FILTER (WHERE sms_status='sent')::int AS sms_sent,
       count(*) FILTER (WHERE sms_status='failed')::int AS sms_failed,
       count(*) FILTER (WHERE sms_status='pending')::int AS sms_pending,
@@ -274,9 +361,9 @@ route('GET', '/staff/outages/:id', async ({ params }) => {
   const critical = await q(`
     SELECT u.id, u.org_name, u.name, u.phone, u.email, u.kind, u.critical_verified,
       max(d.acked_at) AS acked_at,
-      bool_or(d.email_status='sent') AS email_ok, bool_or(d.sms_status='sent') AS sms_ok
+      bool_or(d.email_status='sent') AS email_ok, bool_or(d.sms_status='sent') AS sms_ok, bool_or(d.push_status='sent') AS push_ok
     FROM deliveries d JOIN users u ON u.id=d.user_id
-    WHERE d.outage_id=$1 AND u.critical AND d.stage IN ('notice','reminder')
+    WHERE d.outage_id=$1 AND u.critical AND ${inArea()} AND d.stage IN ('notice','reminder')
     GROUP BY u.id ORDER BY max(d.acked_at) IS NOT NULL, u.org_name`, [o.id]);
   return json({ outage: o, stages, critical });
 }, 'staff');
@@ -284,13 +371,15 @@ route('GET', '/staff/outages/:id', async ({ params }) => {
 route('POST', '/staff/preview', async ({ body }) => {
   const areaIds = ids(body.area_ids);
   if (!areaIds.length) return json({ total: 0, critical: [] });
-  const [{ total }] = await q(`SELECT count(DISTINCT u.id)::int AS total FROM users u JOIN user_areas ua ON ua.user_id=u.id
-                               WHERE ua.area_id = ANY($1::int[]) AND u.active AND u.email_verified`, [areaIds]);
+  const [{ total, everywhere }] = await q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE NOT in_area)::int AS everywhere FROM (
+                               SELECT EXISTS (SELECT 1 FROM user_areas ua WHERE ua.user_id=u.id AND ua.area_id = ANY($1::int[])) AS in_area, u.alert_all
+                               FROM users u WHERE u.active AND u.email_verified AND u.subscribed) t
+                               WHERE in_area OR alert_all`, [areaIds]);
   const critical = await q(`SELECT DISTINCT u.id, u.org_name, u.name, u.kind, u.phone, u.critical_verified
                             FROM users u JOIN user_areas ua ON ua.user_id=u.id
-                            WHERE ua.area_id = ANY($1::int[]) AND u.active AND u.email_verified AND u.critical
+                            WHERE ua.area_id = ANY($1::int[]) AND u.active AND u.email_verified AND u.subscribed AND u.critical
                             ORDER BY u.org_name`, [areaIds]);
-  return json({ total, critical, min_notice_hours: MIN_NOTICE_HOURS });
+  return json({ total, everywhere, critical, min_notice_hours: MIN_NOTICE_HOURS });
 }, 'staff');
 
 route('POST', '/staff/outages', async ({ user, body }) => {
@@ -310,7 +399,7 @@ route('POST', '/staff/outages', async ({ user, body }) => {
   if (kind === 'planned') {
     const hoursAhead = (startsAt - Date.now()) / 3_600_000;
     const [{ n }] = await q(`SELECT count(DISTINCT u.id)::int AS n FROM users u JOIN user_areas ua ON ua.user_id=u.id
-                             WHERE ua.area_id = ANY($1::int[]) AND u.critical AND u.email_verified AND u.active`, [areaIds]);
+                             WHERE ua.area_id = ANY($1::int[]) AND u.critical AND u.email_verified AND u.active AND u.subscribed`, [areaIds]);
     if (n > 0 && hoursAhead < MIN_NOTICE_HOURS) {
       overrideReason = str(body.override_reason, 500);
       if (overrideReason.length < 10) {
@@ -359,7 +448,7 @@ route('GET', '/staff/subscribers', async ({ url }) => {
   const filter = url.searchParams.get('filter') || '';
   const rows = await q(`
     SELECT u.id, u.email, u.name, u.phone, u.org_name, u.kind, u.role, u.critical, u.critical_verified,
-      u.email_verified, u.active, u.sms_opt_in, u.created_at,
+      u.email_verified, u.active, u.subscribed, u.alert_all, u.sms_opt_in, u.created_at,
       (SELECT string_agg(a.name, ', ' ORDER BY a.name) FROM user_areas ua JOIN areas a ON a.id=ua.area_id WHERE ua.user_id=u.id) AS area_names
     FROM users u
     WHERE ($1 = '' OR u.email ILIKE '%'||$1||'%' OR u.name ILIKE '%'||$1||'%' OR u.org_name ILIKE '%'||$1||'%' OR u.phone ILIKE '%'||$1||'%')

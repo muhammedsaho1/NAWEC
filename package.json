@@ -5,5 +5,8 @@
   "type": "module",
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4"
+  },
+  "scripts": {
+    "build": "node cloudflare/build.mjs"
   }
 }
