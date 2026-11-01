@@ -1,6 +1,7 @@
 # NAWEC Alerts
 
 
+
 Power outage alerts by free phone push notifications, email (Brevo) and SMS, sent by location. Hospitals and other critical sites are alerted first and must confirm.
 
 ## What it does
