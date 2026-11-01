@@ -120,6 +120,8 @@ export async function ensureSchema() {
   await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_all BOOLEAN NOT NULL DEFAULT false`);
   // Web push: free alerts to phones (Android + iPhone installed app). Email becomes the backup.
   await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_too BOOLEAN NOT NULL DEFAULT false`);
+  // Phone-only subscribers: joined with one tap, no email. They get push (and SMS for hospitals), never email.
+  await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS push_only BOOLEAN NOT NULL DEFAULT false`);
   await q(`CREATE TABLE IF NOT EXISTS push_subs (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -198,7 +200,7 @@ export function publicUser(u) {
     id: u.id, email: u.email, name: u.name, phone: u.phone, org_name: u.org_name, kind: u.kind,
     role: u.role, critical: u.critical, critical_verified: u.critical_verified,
     sms_opt_in: u.sms_opt_in, email_verified: u.email_verified, subscribed: u.subscribed !== false, alert_all: !!u.alert_all,
-    email_too: !!u.email_too, created_at: u.created_at,
+    email_too: !!u.email_too, push_only: !!u.push_only, created_at: u.created_at,
   };
 }
 
@@ -523,6 +525,7 @@ export async function dispatch(outageId, stage, { criticalOnly = false, deadline
   // Phone showed the push: no backup email needed.
   await q(`UPDATE deliveries SET email_status='not_needed' WHERE outage_id=$1 AND stage=$2 AND email_status='held' AND push_seen_at IS NOT NULL`, [outageId, stage]);
 
+  await q(`UPDATE deliveries d SET email_status='skipped' FROM users u WHERE u.id=d.user_id AND u.push_only AND d.outage_id=$1 AND d.stage=$2 AND d.email_status IN ('pending','failed','held')`, [outageId, stage]);
   // 3. emails (backup), critical facilities first, batched.
   // Held emails go out if the phone hasn't confirmed the push within PUSH_GRACE_MIN minutes.
   const pendingEmail = await q(

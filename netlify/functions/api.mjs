@@ -138,6 +138,37 @@ route('POST', '/push/seen', async ({ body }) => {
   return json({ ok: true });
 });
 
+// One-tap join: no email, no code. The phone's push subscription is the account.
+route('POST', '/device/join', async ({ body, req }) => {
+  const sub = body.subscription || {};
+  const endpoint = str(sub.endpoint, 1000), p256dh = str(sub.keys?.p256dh, 200), auth = str(sub.keys?.auth, 100);
+  if (!/^https:\/\//.test(endpoint) || !p256dh || !auth) fail(400, 'Allow alerts on this phone first.');
+  const kind = body.kind === 'hospital' ? 'hospital' : 'household';
+  const critical = kind === 'hospital';
+  const areaIds = ids(body.area_ids);
+  if (!areaIds.length) fail(400, 'Pick your area.');
+  if (critical && !str(body.org_name)) fail(400, 'Enter the hospital name.');
+  // same phone joining again: reuse its account
+  const [old] = await q(`SELECT u.* FROM push_subs p JOIN users u ON u.id=p.user_id WHERE p.endpoint=$1 AND u.push_only`, [endpoint]);
+  let userId = old?.id;
+  if (!userId) {
+    const [u] = await q(`INSERT INTO users (email, name, org_name, phone, kind, critical, sms_opt_in, email_verified, push_only, unsub_token)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,true,true,$8) RETURNING id`,
+      [`phone-${randomToken(12)}@device.invalid`, str(body.org_name, 120), str(body.org_name, 160), normPhone(body.phone), kind, critical, critical, randomToken(24)]);
+    userId = u.id;
+  } else {
+    await q(`UPDATE users SET subscribed=true, kind=$2, critical=$3, org_name=COALESCE(NULLIF($4,''),org_name), phone=COALESCE(NULLIF($5,''),phone) WHERE id=$1`,
+      [userId, kind, critical, str(body.org_name, 160), normPhone(body.phone)]);
+  }
+  await setUserAreas(userId, areaIds);
+  await q(`INSERT INTO push_subs (user_id, endpoint, p256dh, auth, device) VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (endpoint) DO UPDATE SET user_id=EXCLUDED.user_id, p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth, fails=0`,
+    [userId, endpoint, p256dh, auth, str(body.device || req.headers.get('user-agent'), 200)]);
+  await audit(userId, 'device_join', { kind });
+  const [u] = await q(`SELECT * FROM users WHERE id=$1`, [userId]);
+  return json({ token: await createSession(userId), user: await meWithAreas(u) });
+});
+
 route('POST', '/push/subscribe', async ({ user, body, req }) => {
   const sub = body.subscription || {};
   const endpoint = str(sub.endpoint, 1000), p256dh = str(sub.keys?.p256dh, 200), auth = str(sub.keys?.auth, 100);
@@ -172,7 +203,7 @@ route('POST', '/auth/register', async ({ body }) => {
   const areaIds = ids(body.area_ids);
   const alertAll = body.alert_all === true;
   if (!isEmail(email)) fail(400, 'Enter a valid email.');
-  if (!str(body.name)) fail(400, 'Enter your name.');
+  // Name is optional for homes (simple sign-up); critical facilities still give a contact name.
   if (CRITICAL_KINDS.includes(kind) && !str(body.org_name)) fail(400, 'Enter the facility name.');
   if (CRITICAL_KINDS.includes(kind) && !normPhone(body.phone)) fail(400, 'A phone number is required for critical facilities.');
   if (!areaIds.length && !alertAll) fail(400, 'Choose at least one area, or turn on alerts for everywhere.');
